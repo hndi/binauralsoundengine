@@ -20,10 +20,19 @@ and 32-bit-float, then save.
 ------ The following data can be put into the text file that is processed by the filter ------
 
 The "speaker" plays a sound file at a threedimensional position in a desired volume. The position is
-measured in meters (like all other position values).
-Format: speaker=<soundfile>;<X-Position>;<Y-Position>;<Z-Position>;<Volume>
+measured in meters (like all other position values). The start delay (todo!) is optional as well as the
+keyframes (see below).
+Format: speaker=<soundfile>;<X-Position>;<Y-Position>;<Z-Position>;<Volume>;[Start delay];[Keyframes]
 Example:
-speaker=speakers/test.raw;1.0;1.0;1.75;1.0
+speaker=test.raw;1.0;1.0;1.75;1.0
+
+Speaker keyframes: These allow movement of the speaker object and are a list of timestamps and
+positions relative to the origin of the speaker. The engine interpolates the positions linearly.
+A keyframe requires a time stamp and an x, y, z position, separated by a comma (not semicolon!).
+Each keyframe is separated by a slash. Note that the rendering time increases when using movement
+since the position has to be recalculated for every sound sample.
+This example moves the speaker 3 meters to the right, 3 to the front and then 3 to the top:
+speaker=test.raw;1.0;1.0;1.75;1.0;;1.0,3.0,0.0,0.0/3.5,3.0,3.0,0.0/6.3,3.0,3.0,3.0
 
 The "microphone" receives sound waves and saves them as a mono audio file. It can be positioned
 in threedimensional space. Up to 16 single microphones are currently allowed.

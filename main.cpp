@@ -46,7 +46,13 @@ an external GUI launcher program that comfortably lets you create and edit the 3
 #define M_PI           3.14159265358979323846
 #endif
 
-using namespace std;
+using std::cout;
+using std::endl;
+using std::string;
+using std::ofstream;
+using std::ios;
+using std::streampos;
+using std::ifstream;
 
 static const float MPS = 343.0; //Speed of sound in air: 343 meters per second
 
@@ -391,6 +397,10 @@ Just create an object of this class and use addSpeaker, addMicrohpone, addWall f
 objects. The addMicrohpone returns a pointer to a Microphone object that can be passed to another call of
 addMicrohpone, if you wish to get a two channel audio file by the microhpone object.
 
+If you want to move speakers, create Keyframes by allocating *keyFrames, set useKeyframes to true, store
+the number, then save the absolute position and time stamp in each keyframe. BinauralEngine::start() will do the rest for you.
+::reset() will free the memory
+
 You can use the variables of .settings if you want to change the default settings.
 
 The details are described below.
@@ -406,7 +416,7 @@ class BinauralEngine {
         static const int8_t STATUS_PLAYING = 1;
         static const int8_t STATUS_NOT_PLAYING = 2;
 
-        /* The Speaker class gets some additional information for the target microhpones
+        /* The Speaker class gets some additional information for the target microphones
         to calculate direct samples faster (in function calcSamples) */
         class SpeakerBE : public Speaker {
             public:
@@ -415,6 +425,19 @@ class BinauralEngine {
                 float micPowDist[MAX_MICROPHONES];
                 uint32_t micSampleDist[MAX_MICROPHONES];
                 int16_t micCnt;
+
+                /* These structs contain movement information and keyframes for speakers */
+                struct Movement {
+                    struct  KeyFrames {
+                        Pos pos;
+                        Pos deltaPerSample; // Increase the position of the speaker in each sample by this value
+                        double time = 0.0; // Time stamp of the keyframe
+                        uint32_t sampleNr = 0; // Sample of the keyframe - calculated by start()
+                    } *keyFrames = nullptr;
+
+                    bool useMovement = false;
+                    uint16_t nrKeyFrames = 0;
+                } movement;
         };
 
         /* These are the settings with default values */
@@ -430,6 +453,7 @@ class BinauralEngine {
         ~BinauralEngine();
         int16_t addSpeaker(string fileName, float x, float y, float z);
         int16_t addSpeaker(string fileName, float x, float y, float z, float volume);
+        void addSpeakerKeyFramesByString(uint16_t speakerNr, string keyFrames);
         int16_t addWall(float x1, float y1, float z1, float x2, float y2, float z2, float amount);
         void setSpeakerPos(int16_t speaker_nr, float x, float y, float z);
         Microphone * addMicrophone(string fileName, float x, float y, float z);
@@ -607,11 +631,87 @@ int16_t BinauralEngine::addSpeaker(string fileName, float x, float y, float z, f
     int16_t nr = addSpeaker(fileName, x, y, z);
     if (nr >= 0) {
         speakers[nr]->volume = volume;
+
         return nr;
     }
     return -1;
 }
 
+/* This method adds keyframes to a speaker by parsing a string that contains all information that is read
+out of a text file. '/' is the delimiter between key frames that contain a time stamp and absolute x, y,
+z coordinates, separated by ',' */
+
+void BinauralEngine::addSpeakerKeyFramesByString(uint16_t speakerNr, string keyFrames) {
+    int32_t oldPosV1 = 0, posV1 = 0, oldPosV2, posV2, nrOfKeyFrames = 0, currKeyFrameNr = 1;
+    string currentKeyFrame, currValue;
+    Pos startLocation;
+
+    if (keyFrames == "") {
+        return;
+    }
+
+    /* first, count all keyframes to allocate the right amount of memory */
+    do {
+        posV1 = keyFrames.find("/", oldPosV1);
+        oldPosV1 = posV1 + 1;
+        nrOfKeyFrames++;
+    } while (posV1 != -1);
+
+    /* Set up the keyframes and allocate memory */
+    speakers[speakerNr]->movement.useMovement = true;
+    speakers[speakerNr]->movement.nrKeyFrames = nrOfKeyFrames;
+    speakers[speakerNr]->movement.keyFrames = (SpeakerBE::Movement::KeyFrames *)malloc((nrOfKeyFrames + 1) * sizeof(SpeakerBE::Movement::KeyFrames));
+    speakers[speakerNr]->movement.keyFrames[0].pos = speakers[speakerNr]->pos;
+    startLocation = speakers[speakerNr]->pos;
+
+    /* Parse string and set keyframe values */
+    oldPosV1 = 0;
+    do {
+        posV1 = keyFrames.find("/", oldPosV1);
+        if (posV1 == -1) {
+            currentKeyFrame = keyFrames.substr(oldPosV1, keyFrames.length() - oldPosV1);
+        } else {
+            currentKeyFrame = keyFrames.substr(oldPosV1, posV1 - oldPosV1);
+        }
+
+        oldPosV2 = 0;
+        for (uint8_t valNr = 0; valNr < 4; valNr++) {
+            posV2 = currentKeyFrame.find(",", oldPosV2);
+            if (posV2 == -1) {
+                currValue = currentKeyFrame.substr(oldPosV2, currentKeyFrame.length() - oldPosV2);
+            } else {
+                currValue = currentKeyFrame.substr(oldPosV2, posV2 - oldPosV2);
+            }
+
+            switch (valNr) {
+            case 0:
+                speakers[speakerNr]->movement.keyFrames[currKeyFrameNr].time =
+                        atof(currValue.c_str());
+                break;
+            case 1:
+                speakers[speakerNr]->movement.keyFrames[currKeyFrameNr].pos.x =
+                        startLocation.x + atof(currValue.c_str());
+                break;
+            case 2:
+                speakers[speakerNr]->movement.keyFrames[currKeyFrameNr].pos.y =
+                        startLocation.y + atof(currValue.c_str());
+                break;
+            case 3:
+                speakers[speakerNr]->movement.keyFrames[currKeyFrameNr].pos.z =
+                        startLocation.z + atof(currValue.c_str());
+                break;
+            }
+            oldPosV2 = posV2 + 1;
+            if (posV2 == -1) {
+                break;
+            }
+        }
+
+        oldPosV1 = posV1 + 1;
+        currKeyFrameNr++;
+    } while (posV1 != -1);
+
+}
 void BinauralEngine::setSpeakerPos(int16_t speaker_nr, float x, float y, float z) {
     if (speaker_nr >= 0 && speaker_nr < MAX_SPEAKERS && speakers[speaker_nr] != nullptr) {
         speakers[speaker_nr]->pos.x = x;
@@ -646,6 +746,34 @@ int8_t BinauralEngine::start() {
                 totalSamples = speakers[i]->sampleCount;
             }
             actualSpeakers = i;
+
+            /* Prepare keyframes of speakers */
+            uint32_t sampleNrDiff;
+
+            if (speakers[i]->movement.useMovement == true) {
+                for (uint16_t keyFrameNr = 1; keyFrameNr <= speakers[i]->movement.nrKeyFrames; keyFrameNr++) {
+                    speakers[i]->movement.keyFrames[keyFrameNr].sampleNr =
+                        speakers[i]->movement.keyFrames[keyFrameNr].time * settings.sampleRate;
+
+                    sampleNrDiff = speakers[i]->movement.keyFrames[keyFrameNr].sampleNr -
+                        speakers[i]->movement.keyFrames[keyFrameNr - 1].sampleNr;
+
+                    if (sampleNrDiff > 0) {
+
+                        speakers[i]->movement.keyFrames[keyFrameNr - 1].deltaPerSample.x =
+                            (speakers[i]->movement.keyFrames[keyFrameNr].pos.x -
+                            speakers[i]->movement.keyFrames[keyFrameNr - 1].pos.x) / sampleNrDiff;
+
+                        speakers[i]->movement.keyFrames[keyFrameNr - 1].deltaPerSample.y =
+                            (speakers[i]->movement.keyFrames[keyFrameNr].pos.y -
+                            speakers[i]->movement.keyFrames[keyFrameNr - 1].pos.y) / sampleNrDiff;
+
+                        speakers[i]->movement.keyFrames[keyFrameNr - 1].deltaPerSample.z =
+                            (speakers[i]->movement.keyFrames[keyFrameNr].pos.z -
+                            speakers[i]->movement.keyFrames[keyFrameNr - 1].pos.z) / sampleNrDiff;
+                    }
+                }
+            }
         }
     }
 
@@ -695,6 +823,11 @@ void BinauralEngine::stop(bool writeMicFiles) {
 
     for (i = 0; i < MAX_SPEAKERS; i++) {
         if(speakers[i] != nullptr) {
+            if (speakers[i]->movement.useMovement == true) {
+                speakers[i]->movement.useMovement = false;
+                speakers[i]->movement.nrKeyFrames = 0;
+                free(speakers[i]->movement.keyFrames);
+            }
             speakers[i]->stop();
         }
     }
@@ -718,7 +851,7 @@ uint8_t BinauralEngine::update() {
     td.threadNr = 0;
     calcSamples(&td);
 
-    for (int i = 0; i < settings.maxReflectionPasses; i++) {
+    for (uint32_t i = 0; i < settings.maxReflectionPasses; i++) {
         td.task = TASK_REFLECTION;
         td.threadNr = 0;
         cout << "\rReflection pass #" << i + 1 << "...";
@@ -819,6 +952,23 @@ void BinauralEngine::printSetup(uint8_t width, uint8_t height, uint8_t view) {
                     if (speakers[speakerNr]->pos.y < minH) {
                         minH = speakers[speakerNr]->pos.y;
                     }
+
+                    if (speakers[speakerNr]->movement.useMovement == true) {
+                        for (uint16_t keyFrameNr = 0; keyFrameNr < speakers[speakerNr]->movement.nrKeyFrames + 1; keyFrameNr++) {
+                            if (speakers[speakerNr]->movement.keyFrames[keyFrameNr].pos.x > maxW) {
+                                maxW = speakers[speakerNr]->movement.keyFrames[keyFrameNr].pos.x ;
+                            }
+                            if (speakers[speakerNr]->movement.keyFrames[keyFrameNr].pos.y > maxH) {
+                                maxH = speakers[speakerNr]->movement.keyFrames[keyFrameNr].pos.y;
+                            }
+                            if (speakers[speakerNr]->movement.keyFrames[keyFrameNr].pos.x < minW) {
+                                minW = speakers[speakerNr]->movement.keyFrames[keyFrameNr].pos.x;
+                            }
+                            if (speakers[speakerNr]->movement.keyFrames[keyFrameNr].pos.y < minH) {
+                                minH = speakers[speakerNr]->movement.keyFrames[keyFrameNr].pos.y;
+                            }
+                        }
+                    }
                 }
             }
 
@@ -850,6 +1000,7 @@ void BinauralEngine::printSetup(uint8_t width, uint8_t height, uint8_t view) {
 #endif
             double scale;
             uint16_t realH, realW;
+
             if (((maxH - minH) / heightratio) / height > (maxW -  minW) / width) {
                 realH = height;
                 scale = height / ((maxH - minH) / heightratio);
@@ -916,8 +1067,17 @@ void BinauralEngine::printSetup(uint8_t width, uint8_t height, uint8_t view) {
 
             for (uint16_t speakerNr = 0; speakerNr < MAX_SPEAKERS; speakerNr++) {
                 if (speakers[speakerNr] != nullptr) {
+
+                    if (speakers[speakerNr]->movement.useMovement == true) {
+                        for (uint16_t keyFrameNr = 0; keyFrameNr < speakers[speakerNr]->movement.nrKeyFrames + 1; keyFrameNr++) {
+                            c[realH - (uint8_t)((speakers[speakerNr]->movement.keyFrames[keyFrameNr].pos.y - minH) * scale / heightratio)]
+                            [(uint8_t)((speakers[speakerNr]->movement.keyFrames[keyFrameNr].pos.x - minW) * scale)] = '*';
+                        }
+                    }
+
                     c[realH - (uint8_t)((speakers[speakerNr]->pos.y - minH) * scale / heightratio)]
                     [(uint8_t)((speakers[speakerNr]->pos.x - minW) * scale)] = 'S';
+
                 }
             }
 
@@ -937,7 +1097,8 @@ direct samples, from speakers to microphones, and reflection samples, in which t
 from speakers bounce off walls and then arrive microphones. The samples are modified in two main ways:
 The first is the lowering of volume (todo: the reduction of high frequencies) and the second is the delay
 that is caused by sound waves traveling through air. Both are very important for binaural hearing and
-allow to percieve the location of the sound source directly and the dimensions of the room */
+allow to percieve the location of the sound source directly and the dimensions of the room by locating
+indirect sound waves from walls. */
 void BinauralEngine::calcSamples(ThreadData *td) {
     double amp;
     int32_t speakerNr, sampleNr, micNr, reflNr;
@@ -970,17 +1131,75 @@ void BinauralEngine::calcSamples(ThreadData *td) {
         case TASK_DIRECT:
             for (speakerNr = 0; speakerNr < actualSpeakers; speakerNr++) {
                 if (speakers[speakerNr] != nullptr) {
-                    //todo: if speaker is too far away, it could exceed limits of the buffer
-                    for (sampleNr = 0; sampleNr < speakers[speakerNr]->sampleCount; sampleNr++) {
-                        amp = speakers[speakerNr]->samples[sampleNr];
-                        for (micNr = 0; micNr < speakers[speakerNr]->micCnt; micNr++) {
 
-                            /* Now each sound sample is written in the direct mic buffer, but
-                            'in the future', depending on the distance of the sound source to the
-                            microphone. additionally the volume is reduced*/
-                            mics[speakers[speakerNr]->micNr[micNr]]->
-                                drctBuffer[(sampleNr + speakers[speakerNr]->micSampleDist[micNr])]
-                                += amp / speakers[speakerNr]->micDist[micNr];
+                    if (speakers[speakerNr]->movement.useMovement == false) {
+                        //todo: if speaker is too far away, it could exceed limits of the buffer
+                        for (sampleNr = 0; sampleNr < speakers[speakerNr]->sampleCount; sampleNr++) {
+                            amp = speakers[speakerNr]->samples[sampleNr];
+                            for (micNr = 0; micNr < speakers[speakerNr]->micCnt; micNr++) {
+
+                                /* Now each sound sample is written in the direct mic buffer, but
+                                'in the future', depending on the distance of the sound source to the
+                                microphone. additionally the volume is reduced*/
+                                mics[speakers[speakerNr]->micNr[micNr]]->
+                                    drctBuffer[(sampleNr + speakers[speakerNr]->micSampleDist[micNr])]
+                                    += amp / speakers[speakerNr]->micDist[micNr];
+                            }
+                        }
+
+                    } else { //Keyframes are used.
+
+                        /* In this branch, speakers are moved by following a path specified by keyframes.
+                        For each sample, the position and distance has to be recalculated */
+                        uint16_t currKeyFrame = 0;
+                        uint32_t iMicSampleDist;
+                        double dMicSampleDist, rest;
+                        double micDist;
+                        Pos speakerPos = speakers[speakerNr]->pos;
+
+                        for (sampleNr = 0; sampleNr < speakers[speakerNr]->sampleCount; sampleNr++) {
+                            amp = speakers[speakerNr]->samples[sampleNr];
+                            if (sampleNr >= speakers[speakerNr]->movement.keyFrames[currKeyFrame + 1].sampleNr) {
+
+                                /* Check if we have to enter a new keyframe */
+                                if (currKeyFrame + 1<= speakers[speakerNr]->movement.nrKeyFrames) {
+                                    currKeyFrame++;
+                                    speakerPos = speakers[speakerNr]->movement.keyFrames[currKeyFrame].pos;
+                                }
+                            }
+
+                            /* Move the speaker by the delta per keyframe */
+                            speakerPos.x += speakers[speakerNr]->movement.keyFrames[currKeyFrame].deltaPerSample.x;
+                            speakerPos.y += speakers[speakerNr]->movement.keyFrames[currKeyFrame].deltaPerSample.y;
+                            speakerPos.z += speakers[speakerNr]->movement.keyFrames[currKeyFrame].deltaPerSample.z;
+
+                            for (micNr = 0; micNr < speakers[speakerNr]->micCnt; micNr++) {
+                                /* This is the same as Pos::calcDistance, but with a minimum of function calls
+                                for significant higher performance */
+                                micDist = sqrt((speakerPos.x - mics[speakers[speakerNr]->micNr[micNr]]->pos.x) *
+                                               (speakerPos.x - mics[speakers[speakerNr]->micNr[micNr]]->pos.x) +
+                                               (speakerPos.y - mics[speakers[speakerNr]->micNr[micNr]]->pos.y) *
+                                               (speakerPos.y - mics[speakers[speakerNr]->micNr[micNr]]->pos.y) +
+                                               (speakerPos.z - mics[speakers[speakerNr]->micNr[micNr]]->pos.z) *
+                                               (speakerPos.z - mics[speakers[speakerNr]->micNr[micNr]]->pos.z)
+                                                );
+
+                                dMicSampleDist = micDist / MPS * settings.sampleRate;
+
+                                /* When moving, two samples have to be written to maintain a smooth tranistion if
+                                the changing distance of the sound source causes a switch of the target sample.
+                                The difference between int and double is used to increase the impact on the second
+                                and decrease it on the first sample */
+                                iMicSampleDist = dMicSampleDist;
+                                rest = dMicSampleDist - iMicSampleDist;
+
+                                mics[speakers[speakerNr]->micNr[micNr]]->
+                                    drctBuffer[(sampleNr + iMicSampleDist)]
+                                    += (amp / micDist) * (1.0 - rest);
+                                mics[speakers[speakerNr]->micNr[micNr]]->
+                                    drctBuffer[(sampleNr + iMicSampleDist + 1)]
+                                    += (amp / micDist) * (rest);
+                            }
                         }
                     }
                 }
@@ -1053,41 +1272,116 @@ void BinauralEngine::calcSamples(ThreadData *td) {
                         later added to the sum of the current reflector and mic  distance to later rapidly
                         use those values for the final calculations */
                         speakerDist = Pos::calcDistance(speakers[speakerNr]->pos, refl[0].pos);
-                        for (reflNr = 0; reflNr < nrReflections; reflNr++) {
-                            refl[reflNr].currTotalDistance = speakerDist + refl[reflNr].totalDistance;
-                            refl[reflNr].currTotalSamples = Pos::distanceToSamples(refl[reflNr].currTotalDistance, settings.sampleRate);
 
-                            /* Add those final values to all target microphones and build a final factor
-                            for fast calculations */
-                            for (micNr = 0; micNr < actualMicrophones; micNr++) {
-                                refl[reflNr].tMics[micNr].currMicDist = speakerDist + refl[reflNr].tMics[micNr].micDist;
-                                refl[reflNr].tMics[micNr].currMicSampleDist = Pos::distanceToSamples(refl[reflNr].tMics[micNr].currMicDist, settings.sampleRate);
-                                refl[reflNr].tMics[micNr].finalFactor = refl[reflNr].totalReflAmount / refl[reflNr].tMics[micNr].currMicDist;
+                        if (speakers[speakerNr]->movement.useMovement == false) { //static speaker
 
-                                /* check if the sample distance (number of the samples 'in the future' caused by
-                                the travel time of the sound waves exceeds the total buffer length - and reduce the
-                                number of bounces, if so. Display a warning once */
-                                if (refl[reflNr].tMics[micNr].currMicSampleDist >= settings.additionalTime * settings.sampleRate) {
-                                    nrReflections = reflNr - 1;
-                                    if (sampleOverflowWarning == false) {
-                                    sampleOverflowWarning = true;
-                                        cout << "\rWARNING: Reflection time exceed sound length. Reflection bounces have been reduced. To avoid this, increase additional length to the audio buffer or reduce reflection bounces." << endl;
+                            for (reflNr = 0; reflNr < nrReflections; reflNr++) {
+                                refl[reflNr].currTotalDistance = speakerDist + refl[reflNr].totalDistance;
+                                refl[reflNr].currTotalSamples = Pos::distanceToSamples(refl[reflNr].currTotalDistance, settings.sampleRate);
+
+                                /* Add those final values to all target microphones and build a final factor
+                                for fast calculations */
+                                for (micNr = 0; micNr < actualMicrophones; micNr++) {
+                                    refl[reflNr].tMics[micNr].currMicDist = speakerDist + refl[reflNr].tMics[micNr].micDist;
+                                    refl[reflNr].tMics[micNr].currMicSampleDist = Pos::distanceToSamples(refl[reflNr].tMics[micNr].currMicDist, settings.sampleRate);
+                                    refl[reflNr].tMics[micNr].finalFactor = refl[reflNr].totalReflAmount / refl[reflNr].tMics[micNr].currMicDist;
+
+                                    /* check if the sample distance (number of the samples 'in the future' caused by
+                                    the travel time of the sound waves exceeds the total buffer length - and reduce the
+                                    number of bounces, if so. Display a warning once */
+                                    if (refl[reflNr].tMics[micNr].currMicSampleDist >= settings.additionalTime * settings.sampleRate) {
+                                        nrReflections = reflNr - 1;
+                                        if (sampleOverflowWarning == false) {
+                                        sampleOverflowWarning = true;
+                                            cout << "\rWARNING: Reflection time exceed sound length. Reflection bounces have been reduced. To avoid this, increase additional length to the audio buffer or reduce reflection bounces." << endl;
+                                        }
                                     }
                                 }
                             }
-                        }
 
-                        /* Finally calculate the samples using the previously generated sample distances and
-                        amplitude reductions */
-                        for (sampleNr = 0; sampleNr < speakers[speakerNr]->sampleCount; sampleNr++) {
-                            for (reflNr = 0; reflNr < nrReflections; reflNr++) {
-                                for (micNr = 0; micNr < actualMicrophones; micNr++) {
-                                    mics[micNr]->reflBuffer[sampleNr + refl[reflNr].tMics[micNr].currMicSampleDist]
-                                    += speakers[speakerNr]->samples[sampleNr] *
-                                    refl[reflNr].tMics[micNr].finalFactor;
+
+                            /* Finally calculate the samples using the previously generated sample distances and
+                            amplitude reductions */
+                            for (sampleNr = 0; sampleNr < speakers[speakerNr]->sampleCount; sampleNr++) {
+                                for (reflNr = 0; reflNr < nrReflections; reflNr++) {
+                                    for (micNr = 0; micNr < actualMicrophones; micNr++) {
+                                        mics[micNr]->reflBuffer[sampleNr + refl[reflNr].tMics[micNr].currMicSampleDist]
+                                        += speakers[speakerNr]->samples[sampleNr] *
+                                        refl[reflNr].tMics[micNr].finalFactor;
+                                    }
                                 }
                             }
+
+                        } else { // Movement is used
+                            /* In this branch, speakers are moved by following a path specified by keyframes.
+                            For each sample, the position and distance has to be recalculated */
+
+                            /* Reflector distances are calculated, but without the distance of the speaker
+                            to the first reflector since this will change during the samples */
+                            for (reflNr = 0; reflNr < nrReflections; reflNr++) {
+                                refl[reflNr].currTotalDistance = refl[reflNr].totalDistance;
+                                refl[reflNr].currTotalSamples = Pos::distanceToSamples(refl[reflNr].currTotalDistance, settings.sampleRate);
+
+                                for (micNr = 0; micNr < actualMicrophones; micNr++) {
+                                    refl[reflNr].tMics[micNr].currMicDist = refl[reflNr].tMics[micNr].micDist;
+                                    refl[reflNr].tMics[micNr].currMicSampleDist = Pos::distanceToSamples(refl[reflNr].tMics[micNr].currMicDist, settings.sampleRate);
+                                }
+                            }
+
+                            /* Todo: Overflow warning and reduction of bounces to prevent overflow when the
+                            additional time is too short */
+
+                            //samples berechnen
+                            uint16_t currKeyFrame = 0;
+                            uint32_t iReflSampleDist;
+                            double dReflSampleDist, rest;
+                            double reflDist;
+                            double temp;
+                            Pos speakerPos = speakers[speakerNr]->pos;
+
+                            for (sampleNr = 0; sampleNr < speakers[speakerNr]->sampleCount; sampleNr++) {
+
+                                if (sampleNr >= speakers[speakerNr]->movement.keyFrames[currKeyFrame + 1].sampleNr) {
+                                    if (currKeyFrame + 1<= speakers[speakerNr]->movement.nrKeyFrames) {
+                                        currKeyFrame++;
+                                        speakerPos = speakers[speakerNr]->movement.keyFrames[currKeyFrame].pos;
+                                    }
+                                }
+
+                                /* Move the speaker by the delta per keyframe */
+                                speakerPos.x += speakers[speakerNr]->movement.keyFrames[currKeyFrame].deltaPerSample.x;
+                                speakerPos.y += speakers[speakerNr]->movement.keyFrames[currKeyFrame].deltaPerSample.y;
+                                speakerPos.z += speakers[speakerNr]->movement.keyFrames[currKeyFrame].deltaPerSample.z;
+
+                                for (reflNr = 0; reflNr < nrReflections; reflNr++) {
+
+                                    /* This is the same as Pos::calcDistance, but with a minimum of function calls
+                                    for significant higher performance */
+                                    reflDist = sqrt((speakerPos.x - refl[0].pos.x) *
+                                                   (speakerPos.x - refl[0].pos.x) +
+                                                   (speakerPos.y - refl[0].pos.y) *
+                                                   (speakerPos.y - refl[0].pos.y) +
+                                                   (speakerPos.z - refl[0].pos.z) *
+                                                   (speakerPos.z - refl[0].pos.z)
+                                                    );
+                                    dReflSampleDist = reflDist / MPS * settings.sampleRate;
+
+                                    /* When moving, two samples have to be written to maintain a smooth tranistion if
+                                    the changing distance of the sound source causes a switch of the target sample.
+                                    The difference between int and double is used to increase the impact on the second
+                                    and decrease it on the first sample */
+                                    iReflSampleDist = dReflSampleDist;
+                                    rest = dReflSampleDist - iReflSampleDist;
+
+                                    for (micNr = 0; micNr < actualMicrophones; micNr++) {
+                                        mics[micNr]->reflBuffer[sampleNr + refl[reflNr].tMics[micNr].currMicSampleDist + iReflSampleDist] += speakers[speakerNr]->samples[sampleNr] * refl[reflNr].totalReflAmount / (refl[reflNr].tMics[micNr].currMicDist + reflDist)  * (1.0 - rest);
+                                        mics[micNr]->reflBuffer[sampleNr + refl[reflNr].tMics[micNr].currMicSampleDist + iReflSampleDist + 1] += speakers[speakerNr]->samples[sampleNr] * refl[reflNr].totalReflAmount / (refl[reflNr].tMics[micNr].currMicDist + reflDist)  * rest;
+                                    }
+                                }
+                            }
+
                         }
+
                     }
                 }
 
@@ -1112,7 +1406,7 @@ void configEngineByFile(BinauralEngine &binaural, string fileName) {
     }
 
     string str, arg, value;
-    int16_t pos, oldPos, subValCnt;
+    int32_t pos, oldPos, subValCnt;
     string subVals[16];
     while (getline(in, str)) {
         pos = str.find("=");
@@ -1141,11 +1435,16 @@ void configEngineByFile(BinauralEngine &binaural, string fileName) {
                 } while(pos != -1);
 
                 if (arg == "speaker") {
-                    binaural.addSpeaker(subVals[0],
-                                        atof(subVals[1].c_str()),
-                                        atof(subVals[2].c_str()),
-                                        atof(subVals[3].c_str()),
-                                        atof(subVals[4].c_str()));
+                    uint16_t speakerNr = binaural.addSpeaker(subVals[0],
+                                                            atof(subVals[1].c_str()),
+                                                            atof(subVals[2].c_str()),
+                                                            atof(subVals[3].c_str()),
+                                                            atof(subVals[4].c_str()));
+                    if (subVals[5] != ""); //todo: start time
+
+                    if (subVals[6] != "") {
+                        binaural.addSpeakerKeyFramesByString(speakerNr, subVals[6]);
+                    }
                 }
 
                 if (arg == "microphone") {
