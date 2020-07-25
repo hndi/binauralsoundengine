@@ -59,16 +59,33 @@ value is at 0. You can use any floating point value between 0 and 1. The wall ne
 positions while one axis has to be the same values. Use the same x-values for side walls, the same y-
 values for frontal walls and the same z-values for floors and ceilings. For realistic results, the
 amount value should be pretty high, between 0.8 and 0.99.
-Format: wall=<X-Position 1>;<Y-Position 1>;<Z-Position 1>;<X-Position 2>;<Y-Position 2>;<Z-Position 2>;<Amount>
+Format: wall=<X-Position 1>;<Y-Position 1>;<Z-Position 1>;<X-Position 2>;<Y-Position 2>;<Z-Position 2>;<Amount>;[modifier]
 Example (for a floor):
 wall=-5.0;-1.0;0.0;5.0;6.0;0.0;0.9
 
+The optional modifier value for a wall  is used if you don't want to have a perfectly straight wall,
+which can lead to unrealistic smooth reverb in very big rooms or on big surfaces like house walls or
+mountains. The surface can be modified by three different shapes: sine, square and triangle. You can
+modify the length of these shapes and the depth (in meters). The pattern can be shifted by a given
+amount of meters.
+Format: <type>,<langth>,<depth>,<shift>
+Example: wall=-5.0;-1.0;0.0;5.0;6.0;0.0;0.9;square,10,3,0
 
 A "room" creates 6 walls with identical reflection amounts. It requires two threedimensional positions which
-should describe the lower left near and the upper right far point of a volume, as well as a reflection amount. The reflection amount is a value between 0 and 1.
+should describe the lower left near and the upper right far point of a volume, as well as a reflection amount.
+The reflection amount is a value between 0 and 1.
 Format: room=<X-Position 1>;<Y-Position 1>;<Z-Position 1>;room=<X-Position 2>;<Y-Position 2>;<Z-Position 2>;<Amount>
 Example:
 room=-5.0;-1.0;0.0;5.0;6.0;3.0;0.9
+
+The "rndspawnspeaker" is an advanced speaker with a lot of parameters that spawns with random delays in
+random locations and plays in varying speeds. It can be used for water drops, birds, leaf sounds and so on.
+It requires two positions that describe the corners of a cube in which the speakers spawn, a maximum
+playback time (in seconds), the volume, the min/max pause time between spawns and the optional min/max
+playback speed (1 is the default value).
+Format: randomspawnspeaker=<file>;<X-Pos 1>;<Y-Pos 1>;<Z-Pos 1>;<X-Pos 2>;<Y-Pos 2>;<Z-Pos 2>;<Volume>;<Total Time>;<Min Pause>;<Max Pause>;[Min Speed];[Max Speed]
+Example:
+randomspawnspeaker=test.raw;-10;0;0;10;20;5;1;60;3;6;0.8;1.2
 
 "nrbounces" is the number of reflection bounces between walls. The default value is 50. Smaller rooms
 require more bounces than large rooms. Note that te render time will increase with the number of bounces.
