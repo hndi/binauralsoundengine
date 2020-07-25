@@ -57,8 +57,7 @@ using std::ifstream;
 static const float MPS = 343.0; //Speed of sound in air: 343 meters per second
 
 double floatRand() {
-    /* todo: sometimes RAND_MAX is only 32767, which results in a a low resolution */
-    return ((double) rand() / (RAND_MAX));
+    return (double)(((uint32_t)(rand() & 0x7FFF) << 15) | (rand() & 0x7FFF)) / 0x3FFFFFFF;
 }
 
 /* The Pos class just conains threedimensional positions and offers a function that allows to calculate the
@@ -365,21 +364,119 @@ int32_t Speaker::getSize() {
     }
 }
 
+/* A Wall modifier is used to modify the shape of the wall to improve the realism of
+reflections of walls. It is used by the Wall class. */
+class WallModifier {
+    public:
+        static const uint8_t MOD_NO_MOD = 0;
+        static const uint8_t MOD_SINE = 1;
+        static const uint8_t MOD_TRIANGLE = 2;
+        static const uint8_t MOD_SQUARE = 3;
+
+        double getModifiedAmplitude(double position);
+        void configByString(string cfg);
+
+        uint8_t usedModifier = MOD_NO_MOD;
+        double waveLength = 1.0;
+        double amplitude = 1.0;
+        double shift = 0.0;
+};
+
+/* This function returns a modified amplitude, depending on the modifier settings.
+This result is used to find the desired reflector position on the wall in
+BinauralEngine::calcSamples() */
+double WallModifier::getModifiedAmplitude(double position) {
+    double tmp;
+
+    switch (usedModifier) {
+        case MOD_NO_MOD:
+            return 0.0;
+        case MOD_SINE:
+            return sin((position + shift / 2.0) * M_PI * 4.0 / waveLength) * amplitude / 2;
+        case MOD_SQUARE:
+            if ((uint32_t)((position + shift) / (waveLength / 2.0)) % 2 == 0) {
+                return amplitude * .5;
+            } else {
+                return amplitude * -.5;
+            }
+        case MOD_TRIANGLE:
+            position = abs(position);
+            tmp = (position + shift) / (waveLength / 2);
+            if ((uint32_t)tmp % 2 == 0) {
+                return (tmp - (uint32_t)tmp) * amplitude - amplitude / 2;
+            } else {
+                return (1.0 - (tmp - (uint32_t)tmp)) * amplitude  - amplitude / 2;
+            }
+    }
+
+    return 0.0;
+}
+
+/* This sets up the wall modifiers by a string saved in a config file. The format is
+"type,wavelength,amplitude,shift" while type can be sine, square, triangle and the other
+values are measured in meters */
+void WallModifier::configByString(string cfg) {
+    uint16_t posV2, oldPosV2 = 0;
+    string currValue;
+    for (uint8_t valNr = 0; valNr < 4; valNr++) {
+        posV2 = cfg.find(",", oldPosV2);
+        if (posV2 == -1) {
+            currValue = cfg.substr(oldPosV2, cfg.length() - oldPosV2);
+        } else {
+            currValue = cfg.substr(oldPosV2, posV2 - oldPosV2);
+        }
+        switch (valNr) {
+        case 0:
+            usedModifier = MOD_NO_MOD;
+            if (currValue == "sine") {
+                usedModifier = MOD_SINE;
+            }
+            if (currValue == "square") {
+                usedModifier = MOD_SQUARE;
+            }
+            if (currValue == "triangle") {
+                usedModifier = MOD_TRIANGLE;
+            }
+            break;
+        case 1:
+            waveLength = atof(currValue.c_str());
+            break;
+        case 2:
+            amplitude = atof(currValue.c_str());
+            break;
+        case 3:
+            shift = atof(currValue.c_str());
+            break;
+        }
+        oldPosV2 = posV2 + 1;
+        if (posV2 == -1) {
+            break;
+        }
+    }
+}
+
+
 /* The Wall class just contains two 3D spots, saved as Pos objects and a function to calculate the total area
 of the wall. Walls are supposed to be flat, so the values of one axis should be equal (i.e. if you have a floor,
 the z values have to be the same).
 This objects of this class are used by the BinauralEngine to know where reflective walls should be placed in
 space and find reflection spots for sound waves.
 */
-
 class Wall {
     public:
+        static const uint8_t TYPE_UNKNOWN = 0;
+        static const uint8_t TYPE_TOP = 1;
+        static const uint8_t TYPE_SIDE = 2;
+        static const uint8_t TYPE_FRONT = 3;
+
         Pos posStart;
         Pos posEnd;
         double area = 0.0;
         double reflectionAmount = 0.9;
+        WallModifier modifier;
 
         double calcArea();
+        uint8_t getWallType();
 };
 
 double Wall::calcArea() {
@@ -388,6 +485,41 @@ double Wall::calcArea() {
             + abs(posEnd.y - posStart.y) * abs(posEnd.z - posStart.z);
     return area;
 }
+
+uint8_t Wall::getWallType() {
+    if (abs(posStart.z - posEnd.z) < .1) {
+        return TYPE_TOP;
+    }
+    if (abs(posStart.y - posEnd.y) < .1) {
+        return TYPE_SIDE;
+    }
+    if (abs(posStart.x - posEnd.x) < .1) {
+        return TYPE_FRONT;
+    }
+    return TYPE_UNKNOWN;
+}
+
+/* This is an advanced speaker, used by the BinauralEngine class. It can spawn at random locations */
+class RandomSpawnSpeaker : public Speaker {
+    public:
+
+        //when i take value over 900 the program crashes right at the beginning. stack full for some reason?
+        static const uint16_t MAX_SPAWNS = 400;
+        Pos pos2;
+        double maxTime = 0.0;
+        double minPause = 0.0;
+        double maxPause = 0.0;
+        double minSpeed = 1.0;
+        double maxSpeed = 1.0;
+        uint16_t nrSpawns = 0;
+
+        /* This is the list of spawn points and times */
+        struct Spawns {
+            Pos pos;
+            double speed;
+            uint32_t startSample;
+        } spawns[MAX_SPAWNS];
+};
 
 /* The BinauralEngine class is the heart of this project. It uses the Speaker, Microhpone, Pos, Wall class, keeps
 pointers to those objects, manages their memory, manages opening and closing of sound files, threads (todo!)
@@ -447,14 +579,19 @@ class BinauralEngine {
             uint16_t nrBounces = 50; //Number of sound wave bounces from wall to wall
             uint32_t maxReflectionPasses = 100; //Number of reflection passes before the engine quits
             uint16_t saveMicsEveryNrOfPasses = 0; //The engine saves the mic files every given nr of passes
+            uint32_t randomSeed = 1;
         } settings;
 
         BinauralEngine();
         ~BinauralEngine();
-        int16_t addSpeaker(string fileName, float x, float y, float z);
-        int16_t addSpeaker(string fileName, float x, float y, float z, float volume);
-        void addSpeakerKeyFramesByString(uint16_t speakerNr, string keyFrames);
-        int16_t addWall(float x1, float y1, float z1, float x2, float y2, float z2, float amount);
+        SpeakerBE * addSpeaker(string fileName, float x, float y, float z);
+        SpeakerBE * addSpeaker(string fileName, float x, float y, float z, float volume);
+        RandomSpawnSpeaker * addRndSpeaker(string fileName, double x, double y, double z,
+                                                    double x2, double y2, double z2, float volume,
+                                                    double totalTime, double minPause, double maxPause,
+                                                    double minSpeed, double maxSpeed);
+        void addSpeakerKeyFramesByString(SpeakerBE *speaker, string keyFrames);
+        Wall * addWall(float x1, float y1, float z1, float x2, float y2, float z2, float amount);
         void setSpeakerPos(int16_t speaker_nr, float x, float y, float z);
         Microphone * addMicrophone(string fileName, float x, float y, float z);
         Microphone * addMicrophone(Microphone *secondChan, float x, float y, float z);
@@ -480,24 +617,51 @@ class BinauralEngine {
             uint8_t threadNr;
             uint8_t task;
         };
+
+        /*The reflector is a single 3D point that will be positioned on a wall and contains some information
+        of the cumulated distance/reflection amount from speakers, other reflectors and to microphones
+        to perform a very quick calculation later on */
+        struct Reflector {
+            Pos pos;
+            double amount;
+            double totalDistance = 0.0;
+            uint32_t totalSamples = 0;
+            double currTotalDistance = 0.0;
+            uint32_t currTotalSamples = 0;
+            double reflAmount;
+            double totalReflAmount;
+            struct TargetMics {
+                double micDist;
+                uint32_t micSampleDist;
+                double currMicDist;
+                uint32_t currMicSampleDist;
+                double finalFactor;
+            }tMics[MAX_MICROPHONES];
+        };
+
         void calcSamples(ThreadData *td);
+        void calcDirectRndSpeakerSamples(RandomSpawnSpeaker *speaker);
+        void calcReflRndSpeakerSamples(RandomSpawnSpeaker *speaker, Reflector *refl, uint16_t &nrReflections);
         int16_t findRandomWallByArea(int16_t exceptWallNr);
 
         SpeakerBE *speakers[MAX_SPEAKERS];
         Microphone *mics[MAX_MICROPHONES];
         Wall *walls[MAX_WALLS];
+        RandomSpawnSpeaker *rndSpeakers[MAX_SPEAKERS];
 
         bool running = false;
         bool sampleOverflowWarning;
         int16_t actualSpeakers = 0;
         int16_t actualMicrophones = 0;
         int16_t actualWalls = 0;
+        uint16_t actualRndSpeakers = 0;
         double totalReflectionArea = 0.0;
 };
 
 BinauralEngine::BinauralEngine() {
     for (uint16_t i = 0; i < BinauralEngine::MAX_SPEAKERS; i++) {
         speakers[i] = nullptr;
+        rndSpeakers[i] = nullptr;
     }
     for (uint16_t i = 0; i < BinauralEngine::MAX_MICROPHONES; i++) {
         mics[i] = nullptr;
@@ -531,7 +695,6 @@ void BinauralEngine::calcMicLists() {
                         speakers[i]->micPowDist[x] = pow(d, 2.0);
                         speakers[i]->micNr[speakers[i]->micCnt] = x;
                         speakers[i]->micCnt++;
-                        cout << "added sp=" << i << ", mic=" << x << ", d=" << d << endl;
                     }
                 }
 
@@ -555,6 +718,11 @@ the memory after the job is done */
 void BinauralEngine::reset() {
     for (uint16_t i = 0; i < BinauralEngine::MAX_SPEAKERS; i++) {
         if (speakers[i] != nullptr) {
+            delete speakers[i];
+            speakers[i] = nullptr;
+        }
+
+        if (rndSpeakers[i] != nullptr) {
             delete speakers[i];
             speakers[i] = nullptr;
         }
@@ -600,7 +768,7 @@ Microphone * BinauralEngine::addMicrophone(Microphone *secondChan, float x, floa
 }
 
 
-int16_t BinauralEngine::addWall(float x1, float y1, float z1, float x2, float y2, float z2, float amount) {
+Wall * BinauralEngine::addWall(float x1, float y1, float z1, float x2, float y2, float z2, float amount) {
     for (int16_t i = 0; i < MAX_WALLS; i++) {
         if (walls[i] == nullptr) {
             walls[i] = new Wall;
@@ -608,40 +776,78 @@ int16_t BinauralEngine::addWall(float x1, float y1, float z1, float x2, float y2
             walls[i]->posEnd.set(x2, y2, z2);
             walls[i]->reflectionAmount = amount;
             walls[i]->calcArea();
-            return i;
+
+            return walls[i];
         }
     }
-    return -1;
+    return nullptr;
 }
 
-int16_t BinauralEngine::addSpeaker(string fileName, float x, float y, float z) {
+BinauralEngine::SpeakerBE * BinauralEngine::addSpeaker(string fileName, float x, float y, float z) {
     for (int16_t i = 0; i < MAX_SPEAKERS; i++) {
         if (speakers[i] == nullptr) {
             speakers[i] = new SpeakerBE;
             setSpeakerPos(i, x, y, z);
             speakers[i]->setFileName(fileName);
-            return i;
+            return speakers[i];
         }
     }
-    return -1;
+    return nullptr;
 }
 
 
-int16_t BinauralEngine::addSpeaker(string fileName, float x, float y, float z, float volume) {
-    int16_t nr = addSpeaker(fileName, x, y, z);
-    if (nr >= 0) {
-        speakers[nr]->volume = volume;
+BinauralEngine::SpeakerBE * BinauralEngine::addSpeaker(string fileName, float x, float y, float z, float volume) {
+    SpeakerBE *speaker = addSpeaker(fileName, x, y, z);
+    if (speaker != nullptr) {
+        speaker->volume = volume;
 
-        return nr;
+        return speaker;
     }
-    return -1;
+    return nullptr;
 }
+
+/* A random spawn speaker is added. The final positions of each spawn point is generated
+in the start() function */
+RandomSpawnSpeaker * BinauralEngine::addRndSpeaker(string fileName, double x, double y, double z,
+                                                    double x2, double y2, double z2, float volume,
+                                                    double totalTime, double minPause, double maxPause,
+                                                    double minSpeed, double maxSpeed) {
+    for (int16_t i = 0; i < MAX_SPEAKERS; i++) {
+        if (rndSpeakers[i] == nullptr) {
+            rndSpeakers[i] = new RandomSpawnSpeaker;
+            rndSpeakers[i]->setFileName(fileName);
+            rndSpeakers[i]->pos.x = x;
+            rndSpeakers[i]->pos.y = y;
+            rndSpeakers[i]->pos.z = z;
+            rndSpeakers[i]->pos2.x = x2;
+            rndSpeakers[i]->pos2.y = y2;
+            rndSpeakers[i]->pos2.z = z2;
+            rndSpeakers[i]->volume = volume;
+            rndSpeakers[i]->minPause = minPause;
+            rndSpeakers[i]->maxPause = maxPause;
+            rndSpeakers[i]->maxTime = totalTime;
+            if (minSpeed == 0.0) {
+                rndSpeakers[i]->minSpeed = 1.0;
+            } else {
+                rndSpeakers[i]->minSpeed = minSpeed;
+            }
+            if (maxSpeed == 0.0) {
+                rndSpeakers[i]->maxSpeed = 1.0;
+            } else {
+                rndSpeakers[i]->maxSpeed = maxSpeed;
+            }
+
+            return rndSpeakers[i];
+        }
+    }
+    return nullptr;
+}
+
 
 /* This method adds keyframes to a speaker by parsing a string that contains all information that is read
 out of a text file. '/' is the delimiter between key frames that contain a time stamp and absolute x, y,
 z coordinates, separated by ',' */
-
-void BinauralEngine::addSpeakerKeyFramesByString(uint16_t speakerNr, string keyFrames) {
+void BinauralEngine::addSpeakerKeyFramesByString(SpeakerBE *speaker, string keyFrames) {
     int32_t oldPosV1 = 0, posV1 = 0, oldPosV2, posV2, nrOfKeyFrames = 0, currKeyFrameNr = 1;
     string currentKeyFrame, currValue;
     Pos startLocation;
@@ -658,11 +864,11 @@ void BinauralEngine::addSpeakerKeyFramesByString(uint16_t speakerNr, string keyF
     } while (posV1 != -1);
 
     /* Set up the keyframes and allocate memory */
-    speakers[speakerNr]->movement.useMovement = true;
-    speakers[speakerNr]->movement.nrKeyFrames = nrOfKeyFrames;
-    speakers[speakerNr]->movement.keyFrames = (SpeakerBE::Movement::KeyFrames *)malloc((nrOfKeyFrames + 1) * sizeof(SpeakerBE::Movement::KeyFrames));
-    speakers[speakerNr]->movement.keyFrames[0].pos = speakers[speakerNr]->pos;
-    startLocation = speakers[speakerNr]->pos;
+    speaker->movement.useMovement = true;
+    speaker->movement.nrKeyFrames = nrOfKeyFrames;
+    speaker->movement.keyFrames = (SpeakerBE::Movement::KeyFrames *)malloc((nrOfKeyFrames + 1) * sizeof(SpeakerBE::Movement::KeyFrames));
+    speaker->movement.keyFrames[0].pos = speaker->pos;
+    startLocation = speaker->pos;
 
     /* Parse string and set keyframe values */
     oldPosV1 = 0;
@@ -685,19 +891,19 @@ void BinauralEngine::addSpeakerKeyFramesByString(uint16_t speakerNr, string keyF
 
             switch (valNr) {
             case 0:
-                speakers[speakerNr]->movement.keyFrames[currKeyFrameNr].time =
+                speaker->movement.keyFrames[currKeyFrameNr].time =
                         atof(currValue.c_str());
                 break;
             case 1:
-                speakers[speakerNr]->movement.keyFrames[currKeyFrameNr].pos.x =
+                speaker->movement.keyFrames[currKeyFrameNr].pos.x =
                         startLocation.x + atof(currValue.c_str());
                 break;
             case 2:
-                speakers[speakerNr]->movement.keyFrames[currKeyFrameNr].pos.y =
+                speaker->movement.keyFrames[currKeyFrameNr].pos.y =
                         startLocation.y + atof(currValue.c_str());
                 break;
             case 3:
-                speakers[speakerNr]->movement.keyFrames[currKeyFrameNr].pos.z =
+                speaker->movement.keyFrames[currKeyFrameNr].pos.z =
                         startLocation.z + atof(currValue.c_str());
                 break;
             }
@@ -732,10 +938,13 @@ void BinauralEngine::setMicrophonePos(uint8_t micNr, float x, float y, float z) 
 int8_t BinauralEngine::start() {
     cout << "Engine starts..." << endl;
     uint32_t i;
-    srand(2); //todo: Put this into settings.
     totalSamples = 0;
 
     actualSpeakers = 0;
+    actualMicrophones = 0;
+    actualRndSpeakers = 0;
+    actualWalls = 0;
+
     sampleOverflowWarning = false;
 
     //Prepare the speaker objects and load their files. Print result (1 = OK)
@@ -747,10 +956,11 @@ int8_t BinauralEngine::start() {
             }
             actualSpeakers = i;
 
-            /* Prepare keyframes of speakers */
             uint32_t sampleNrDiff;
 
             if (speakers[i]->movement.useMovement == true) {
+                /* Prepare keyframes of speakers */
+
                 for (uint16_t keyFrameNr = 1; keyFrameNr <= speakers[i]->movement.nrKeyFrames; keyFrameNr++) {
                     speakers[i]->movement.keyFrames[keyFrameNr].sampleNr =
                         speakers[i]->movement.keyFrames[keyFrameNr].time * settings.sampleRate;
@@ -775,6 +985,49 @@ int8_t BinauralEngine::start() {
                 }
             }
         }
+
+        if (rndSpeakers[i] != nullptr) {
+            /* Random Spawn Speakers are initialized */
+
+            uint32_t nextStart = 0;
+
+            /* This should keep the spawn points consistent in all speakers, independent from the number of
+            spawn points and the number of other rndspeakers */
+            srand(settings.randomSeed + i * 1337);
+            cout << "Starting rndspawnspeaker #" << i << " returns " << (int16_t)rndSpeakers[i]->start() << endl;
+
+            actualRndSpeakers = i;
+            rndSpeakers[i]->nrSpawns = 0;
+            cout << rndSpeakers[i]->sampleCount << ", " << rndSpeakers[i]->minPause << ", " << rndSpeakers[i]->maxPause << endl;
+
+            /* The spawn locations and times for the Random Spawn Speaker are generated here.*/
+            for (uint16_t spawnNr = 0; spawnNr < RandomSpawnSpeaker::MAX_SPAWNS; spawnNr++) {
+
+                rndSpeakers[i]->spawns[spawnNr].pos.x = (rndSpeakers[i]->pos2.x - rndSpeakers[i]->pos.x)
+                                                        * floatRand() + rndSpeakers[i]->pos.x;
+                rndSpeakers[i]->spawns[spawnNr].pos.y = (rndSpeakers[i]->pos2.y - rndSpeakers[i]->pos.y)
+                                                        * floatRand() + rndSpeakers[i]->pos.y;
+                rndSpeakers[i]->spawns[spawnNr].pos.z = (rndSpeakers[i]->pos2.z - rndSpeakers[i]->pos.z)
+                                                        * floatRand() + rndSpeakers[i]->pos.z;
+                rndSpeakers[i]->spawns[spawnNr].speed = (rndSpeakers[i]->maxSpeed - rndSpeakers[i]->minSpeed)
+                                                        * floatRand() + rndSpeakers[i]->minSpeed;
+
+                rndSpeakers[i]->spawns[spawnNr].startSample = nextStart + (rndSpeakers[i]->maxPause - rndSpeakers[i]->minPause) *
+                                                              floatRand() * settings.sampleRate + rndSpeakers[i]->minPause *
+                                                              settings.sampleRate;
+                if (rndSpeakers[i]->spawns[spawnNr].startSample + rndSpeakers[i]->sampleCount >= rndSpeakers[i]->maxTime * settings.sampleRate) {
+                    break;
+                } else {
+                    nextStart = rndSpeakers[i]->spawns[spawnNr].startSample + rndSpeakers[i]->sampleCount;
+                    rndSpeakers[i]->nrSpawns = spawnNr + 1;
+                    if (nextStart > totalSamples) {
+                        totalSamples = nextStart;
+                    }
+                }
+            }
+
+        }
+
     }
 
     //Additional time is added to allow sound delay to be processed.
@@ -809,9 +1062,11 @@ int8_t BinauralEngine::start() {
     actualSpeakers += 1;
     actualMicrophones += 1;
     actualWalls += 1;
+    actualRndSpeakers += 1;
 
     calcMicLists();
 
+    srand(settings.randomSeed);
     running = true;
 
     return totalSamples;
@@ -852,12 +1107,7 @@ uint8_t BinauralEngine::update() {
     calcSamples(&td);
 
     for (uint32_t i = 0; i < settings.maxReflectionPasses; i++) {
-        td.task = TASK_REFLECTION;
-        td.threadNr = 0;
-        cout << "\rReflection pass #" << i + 1 << "...";
-        cout.flush();
-        calcSamples(&td);
-        if (settings.saveMicsEveryNrOfPasses != 0 && i % settings.saveMicsEveryNrOfPasses == 0) {
+       if (settings.saveMicsEveryNrOfPasses != 0 && i % settings.saveMicsEveryNrOfPasses == 0) {
             cout << "\rSaving microphone files   " << endl;
             for (int x = 0; x < actualMicrophones; x++) {
                 if (mics[x] != nullptr) {
@@ -865,6 +1115,12 @@ uint8_t BinauralEngine::update() {
                 }
             }
         }
+        td.task = TASK_REFLECTION;
+        td.threadNr = 0;
+        cout << "\rReflection pass #" << i + 1 << "...";
+        cout.flush();
+        calcSamples(&td);
+
     }
     cout << endl;
     return STATUS_PLAYING;
@@ -876,7 +1132,7 @@ on which a reflector is placed. Pass exceptWallNr to exclude a wall (usually the
 emitted from) or -1 to return any wall. Be sure not to call this function with only one wall available,
 which is excluded, this would result in an infinite loop. Returns -1 if operation is not possible */
 int16_t BinauralEngine::findRandomWallByArea(int16_t exceptWallNr) {
-    int16_t targetWall;
+    int16_t targetWall = -1;
     double r, addedAreas;
     if (actualWalls > 0) {
         if (actualWalls == 1) {
@@ -910,30 +1166,30 @@ void BinauralEngine::printSetup(uint8_t width, uint8_t height, uint8_t view) {
             //First, find all maximal and minimal x/y/z positions of all objects to measure scene dimensions
             for (uint16_t wallNr = 0; wallNr < MAX_WALLS; wallNr++) {
                 if (walls[wallNr] != nullptr) {
-                    if (walls[wallNr]->posEnd.x > maxW) {
-                        maxW = walls[wallNr]->posEnd.x;
+                    if (walls[wallNr]->posEnd.x + walls[wallNr]->modifier.amplitude / 2 > maxW) {
+                        maxW = walls[wallNr]->posEnd.x + walls[wallNr]->modifier.amplitude / 2 ;
                     }
-                    if (walls[wallNr]->posStart.x > maxW) {
-                        maxW = walls[wallNr]->posStart.x;
+                    if (walls[wallNr]->posStart.x + walls[wallNr]->modifier.amplitude / 2 > maxW) {
+                        maxW = walls[wallNr]->posStart.x + walls[wallNr]->modifier.amplitude / 2 ;
                     }
-                    if (walls[wallNr]->posEnd.y > maxH) {
-                        maxH = walls[wallNr]->posEnd.y;
+                    if (walls[wallNr]->posEnd.y + walls[wallNr]->modifier.amplitude / 2 > maxH) {
+                        maxH = walls[wallNr]->posEnd.y + walls[wallNr]->modifier.amplitude / 2 ;
                     }
-                    if (walls[wallNr]->posStart.y > maxH) {
-                        maxH = walls[wallNr]->posEnd.y;
+                    if (walls[wallNr]->posStart.y + walls[wallNr]->modifier.amplitude / 2 > maxH) {
+                        maxH = walls[wallNr]->posEnd.y + walls[wallNr]->modifier.amplitude / 2;
                     }
 
-                    if (walls[wallNr]->posEnd.x < minW) {
-                        minW = walls[wallNr]->posEnd.x;
+                    if (walls[wallNr]->posEnd.x - walls[wallNr]->modifier.amplitude / 2 < minW) {
+                        minW = walls[wallNr]->posEnd.x - walls[wallNr]->modifier.amplitude / 2;
                     }
-                    if (walls[wallNr]->posStart.x < minW) {
-                        minW = walls[wallNr]->posStart.x;
+                    if (walls[wallNr]->posStart.x - walls[wallNr]->modifier.amplitude / 2 < minW) {
+                        minW = walls[wallNr]->posStart.x - walls[wallNr]->modifier.amplitude / 2;
                     }
-                    if (walls[wallNr]->posEnd.y < minH) {
-                        minH = walls[wallNr]->posEnd.y;
+                    if (walls[wallNr]->posEnd.y - walls[wallNr]->modifier.amplitude / 2 < minH) {
+                        minH = walls[wallNr]->posEnd.y - walls[wallNr]->modifier.amplitude / 2;
                     }
-                    if (walls[wallNr]->posStart.y < minH) {
-                        minH = walls[wallNr]->posEnd.y;
+                    if (walls[wallNr]->posStart.y - walls[wallNr]->modifier.amplitude / 2 < minH) {
+                        minH = walls[wallNr]->posEnd.y - walls[wallNr]->modifier.amplitude / 2;
                     }
                 }
             }
@@ -1037,22 +1293,22 @@ void BinauralEngine::printSetup(uint8_t width, uint8_t height, uint8_t view) {
                         startP = (walls[wallNr]->posEnd.x - minW)  * scale;
                     }
                     for (x = startP; x < endP; x++) {
-                        c[realH - (uint8_t)((walls[wallNr]->posStart.y - minH) * scale / heightratio)][x] = '.';
-                        c[realH - (uint8_t)((walls[wallNr]->posEnd.y - minH) * scale / heightratio)][x] = '.';
+                        c[realH - (uint8_t)((walls[wallNr]->posStart.y + walls[wallNr]->modifier.getModifiedAmplitude((x + minW) / scale) - minH) * scale / heightratio)][x] = '.';
+                        c[realH - (uint8_t)((walls[wallNr]->posEnd.y + walls[wallNr]->modifier.getModifiedAmplitude((x + minW) / scale) - minH) * scale / heightratio)][x] = '.';
+                        //kkk
                     }
 
-                    if (walls[wallNr]->posEnd.y > walls[wallNr]->posStart.y) {
-                        startP = (walls[wallNr]->posStart.y - minH)  * scale / heightratio;
-                        endP = (walls[wallNr]->posEnd.y - minH)  * scale / heightratio;
+                    if (walls[wallNr]->posEnd.y < walls[wallNr]->posStart.y) {
+                        startP = realH - (uint8_t)(walls[wallNr]->posStart.y - minH)  * scale / heightratio;
+                        endP = realH - (uint8_t) (walls[wallNr]->posEnd.y - minH)  * scale / heightratio;
                     } else {
-                        endP = (walls[wallNr]->posStart.y - minH)  * scale / heightratio;
-                        startP = (walls[wallNr]->posEnd.y - minH)  * scale / heightratio;
+                        endP = realH - (uint8_t) (walls[wallNr]->posStart.y - minH)  * scale / heightratio;
+                        startP = realH - (uint8_t) (walls[wallNr]->posEnd.y - minH)  * scale / heightratio;
                     }
                     for (x = startP; x < endP; x++) {
-                        c[x][(uint8_t)((walls[wallNr]->posStart.x - minW) * scale)] = '.';
-                        c[x][(uint8_t)((walls[wallNr]->posEnd.x - minW) * scale)] = '.';
+                        c[x][(uint8_t)((walls[wallNr]->posStart.x + walls[wallNr]->modifier.getModifiedAmplitude((x + minH) / scale) - minW) * scale)] = '.';
+                        c[x][(uint8_t)((walls[wallNr]->posEnd.x + walls[wallNr]->modifier.getModifiedAmplitude((x + minH) / scale) - minW) * scale)] = '.';
                     }
-
                 }
             }
 
@@ -1101,35 +1357,15 @@ allow to percieve the location of the sound source directly and the dimensions o
 indirect sound waves from walls. */
 void BinauralEngine::calcSamples(ThreadData *td) {
     double amp;
-    int32_t speakerNr, sampleNr, micNr, reflNr;
-
-    /*The reflector is a single 3D point that will be positioned on a wall and contains some information
-    of the cumulated distance/reflection amount from speakers, other reflectors and to microphones
-    to perform a very quick calculation later on */
-    struct Reflector {
-        Pos pos;
-        double amount;
-        double totalDistance = 0.0;
-        uint32_t totalSamples = 0;
-        double currTotalDistance = 0.0;
-        uint32_t currTotalSamples = 0;
-        double reflAmount;
-        double totalReflAmount;
-        struct TargetMics {
-            double micDist;
-            uint32_t micSampleDist;
-            double currMicDist;
-            uint32_t currMicSampleDist;
-            double finalFactor;
-        }tMics[MAX_MICROPHONES];
-    };
+    int32_t speakerNr, micNr;
+    uint32_t sampleNr, reflNr;
 
     switch (td->task) {
 
         /* Calculation of direct sound samples. Values are used that were previously calculated by
         calcMicLists*/
         case TASK_DIRECT:
-            for (speakerNr = 0; speakerNr < actualSpeakers; speakerNr++) {
+            for (speakerNr = 0; speakerNr < actualSpeakers || speakerNr < actualRndSpeakers; speakerNr++) {
                 if (speakers[speakerNr] != nullptr) {
 
                     if (speakers[speakerNr]->movement.useMovement == false) {
@@ -1156,7 +1392,7 @@ void BinauralEngine::calcSamples(ThreadData *td) {
                         double dMicSampleDist, rest;
                         double micDist;
                         Pos speakerPos = speakers[speakerNr]->pos;
-
+//yyy
                         for (sampleNr = 0; sampleNr < speakers[speakerNr]->sampleCount; sampleNr++) {
                             amp = speakers[speakerNr]->samples[sampleNr];
                             if (sampleNr >= speakers[speakerNr]->movement.keyFrames[currKeyFrame + 1].sampleNr) {
@@ -1203,6 +1439,10 @@ void BinauralEngine::calcSamples(ThreadData *td) {
                         }
                     }
                 }
+
+                if (rndSpeakers[speakerNr] != nullptr) {
+                    calcDirectRndSpeakerSamples(rndSpeakers[speakerNr]);
+                }
             }
             break;
 
@@ -1211,7 +1451,7 @@ void BinauralEngine::calcSamples(ThreadData *td) {
         reflector point */
         case TASK_REFLECTION:
             if (actualWalls > 0) {
-                int16_t nrReflections = settings.nrBounces;
+                uint16_t nrReflections = settings.nrBounces;
                 int16_t wallNr, lastRefl = -1, lastWall = -1;
 
                 if (actualWalls == 1) {
@@ -1233,6 +1473,20 @@ void BinauralEngine::calcSamples(ThreadData *td) {
                     refl[reflNr].pos.x = floatRand() * (walls[wallNr]->posEnd.x - walls[wallNr]->posStart.x) + walls[wallNr]->posStart.x;
                     refl[reflNr].pos.y = floatRand() * (walls[wallNr]->posEnd.y - walls[wallNr]->posStart.y) + walls[wallNr]->posStart.y;
                     refl[reflNr].pos.z = floatRand() * (walls[wallNr]->posEnd.z - walls[wallNr]->posStart.z) + walls[wallNr]->posStart.z;
+
+                    if (walls[wallNr]->modifier.usedModifier != WallModifier::MOD_NO_MOD) {
+                        switch(walls[wallNr]->getWallType()) {
+                            case Wall::TYPE_FRONT:
+                                refl[reflNr].pos.y += walls[wallNr]->modifier.getModifiedAmplitude(refl[reflNr].pos.x);
+                                break;
+                            case Wall::TYPE_SIDE:
+                                refl[reflNr].pos.x += walls[wallNr]->modifier.getModifiedAmplitude(refl[reflNr].pos.y);
+                                break;
+                            case Wall::TYPE_TOP:
+                                refl[reflNr].pos.z += walls[wallNr]->modifier.getModifiedAmplitude(refl[reflNr].pos.x);
+                                break;
+                        }
+                    }
 
                     if (lastRefl == -1) { // The first reflector, directly hit by a speaker
                         refl[reflNr].totalDistance = 0.0;
@@ -1265,7 +1519,7 @@ void BinauralEngine::calcSamples(ThreadData *td) {
 
                 /* Now all samples of all speakers with all reflectors are written to all microphones */
                 double speakerDist;
-                for (speakerNr = 0; speakerNr < actualSpeakers; speakerNr++) {
+                for (speakerNr = 0; speakerNr < actualSpeakers || speakerNr < actualRndSpeakers; speakerNr++) {
                     if (speakers[speakerNr] != nullptr) {
 
                         /* The distance of the current speaker to the first reflector is measured and
@@ -1336,7 +1590,6 @@ void BinauralEngine::calcSamples(ThreadData *td) {
                             uint32_t iReflSampleDist;
                             double dReflSampleDist, rest;
                             double reflDist;
-                            double temp;
                             Pos speakerPos = speakers[speakerNr]->pos;
 
                             for (sampleNr = 0; sampleNr < speakers[speakerNr]->sampleCount; sampleNr++) {
@@ -1379,17 +1632,96 @@ void BinauralEngine::calcSamples(ThreadData *td) {
                                     }
                                 }
                             }
-
                         }
+                    }
 
+                    if (rndSpeakers[speakerNr] != nullptr) {
+                        calcReflRndSpeakerSamples(rndSpeakers[speakerNr], refl, nrReflections);
                     }
                 }
-
             }
             break;
 
     }
 }
+
+void BinauralEngine::calcDirectRndSpeakerSamples(RandomSpawnSpeaker *speaker) {
+    int32_t micNr, spawnNr;
+    uint32_t sampleNr;
+    double amp;
+    double micDist[actualMicrophones];
+    uint32_t micSampleDist[actualMicrophones];
+    uint32_t speedSampleCount;
+
+    for (spawnNr = 0; spawnNr < speaker->nrSpawns; spawnNr++) {
+        for (micNr = 0; micNr < actualMicrophones; micNr++) {
+            micDist[micNr] = Pos::calcDistance(speaker->spawns[spawnNr].pos, mics[micNr]->pos);
+            micSampleDist[micNr] = Pos::distanceToSamples(micDist[micNr], settings.sampleRate);
+        }
+
+        speedSampleCount = speaker->sampleCount / speaker->spawns[spawnNr].speed;
+        for (sampleNr = 0; sampleNr < speedSampleCount; sampleNr++) {
+            amp = speaker->samples[(uint32_t)(sampleNr * speaker->spawns[spawnNr].speed)];
+            for (micNr = 0; micNr < actualMicrophones; micNr++) {
+
+                mics[micNr]->
+                    drctBuffer[(sampleNr + speaker->spawns[spawnNr].startSample) + micSampleDist[micNr]]
+                    += amp / micDist[micNr];
+            }
+        }
+    }
+}
+
+void BinauralEngine::calcReflRndSpeakerSamples(RandomSpawnSpeaker *speaker, Reflector *refl, uint16_t &nrReflections) {
+    int32_t reflNr, sampleNr, micNr, spawnNr, speedSampleCount;
+
+    /* Reflector distances are calculated, but without the distance of the speaker
+    to the first reflector since this will change during the samples */
+    for (reflNr = 0; reflNr < nrReflections; reflNr++) {
+        refl[reflNr].currTotalDistance = refl[reflNr].totalDistance;
+        refl[reflNr].currTotalSamples = Pos::distanceToSamples(refl[reflNr].currTotalDistance, settings.sampleRate);
+
+        for (micNr = 0; micNr < actualMicrophones; micNr++) {
+            refl[reflNr].tMics[micNr].currMicDist = refl[reflNr].tMics[micNr].micDist;
+            refl[reflNr].tMics[micNr].currMicSampleDist = Pos::distanceToSamples(refl[reflNr].tMics[micNr].currMicDist, settings.sampleRate);
+        }
+    }
+
+    /* Todo: Overflow warning and reduction of bounces to prevent overflow when the
+    additional time is too short */
+
+    double reflDist;
+    Pos speakerPos;
+
+    for (spawnNr = 0; spawnNr < speaker->nrSpawns; spawnNr++) {
+        speakerPos = speaker->spawns[spawnNr].pos;
+        reflDist = Pos::calcDistance(speakerPos, refl[0].pos);
+
+        //hier alle reflektoren durchgehen, finale mic-distanz ausrechnen, unten dann anwenden
+        for (reflNr = 0; reflNr < nrReflections; reflNr++) {
+            //relf[reflNr]
+            for (micNr = 0; micNr < actualMicrophones; micNr++) {
+                refl[reflNr].tMics[micNr].currMicDist = refl[reflNr].tMics[micNr].micDist + reflDist;
+                refl[reflNr].tMics[micNr].currMicSampleDist = Pos::distanceToSamples(refl[reflNr].tMics[micNr].currMicDist, settings.sampleRate);
+            }
+
+        }
+        speedSampleCount = speaker->sampleCount / speaker->spawns[spawnNr].speed;
+        for (sampleNr = 0; sampleNr < speedSampleCount; sampleNr++) {
+
+            for (reflNr = 0; reflNr < nrReflections; reflNr++) {
+
+
+                //yyy
+                for (micNr = 0; micNr < actualMicrophones; micNr++) {
+                    mics[micNr]->reflBuffer[sampleNr + refl[reflNr].tMics[micNr].currMicSampleDist + speaker->spawns[spawnNr].startSample] +=
+                    speaker->samples[(uint32_t)(sampleNr * speaker->spawns[spawnNr].speed)] * refl[reflNr].totalReflAmount / refl[reflNr].tMics[micNr].currMicDist;
+                }
+            }
+        }
+    }
+}
+
 
 /* This function reads a text file which contains information about speakers, microphones, settings, walls
 and adds some functionality like the head setup. It directly sets up the BinauralEngine object privided as
@@ -1411,9 +1743,12 @@ void configEngineByFile(BinauralEngine &binaural, string fileName) {
     while (getline(in, str)) {
         pos = str.find("=");
         if (str.substr(0, 1) != "#") {
+            for (uint8_t i = 0; i < 16; i++) {
+                subVals[i] = "";
+            }
             arg = str.substr(0, pos);
 
-            if (pos > 0 && str.length() > pos) {
+            if (pos > 0 && (int32_t)str.length() > pos) {
                 value = str.substr(pos + 1);
                 //cout << "ARG: " << arg << endl;
                 for (uint16_t i = i; i < 16; i++) {
@@ -1435,16 +1770,34 @@ void configEngineByFile(BinauralEngine &binaural, string fileName) {
                 } while(pos != -1);
 
                 if (arg == "speaker") {
-                    uint16_t speakerNr = binaural.addSpeaker(subVals[0],
-                                                            atof(subVals[1].c_str()),
-                                                            atof(subVals[2].c_str()),
-                                                            atof(subVals[3].c_str()),
-                                                            atof(subVals[4].c_str()));
+                    BinauralEngine::SpeakerBE *speaker = binaural.addSpeaker(subVals[0],
+                                            atof(subVals[1].c_str()),
+                                            atof(subVals[2].c_str()),
+                                            atof(subVals[3].c_str()),
+                                            atof(subVals[4].c_str()));
                     if (subVals[5] != ""); //todo: start time
 
                     if (subVals[6] != "") {
-                        binaural.addSpeakerKeyFramesByString(speakerNr, subVals[6]);
+                        binaural.addSpeakerKeyFramesByString(speaker, subVals[6]);
                     }
+                }
+
+                if (arg == "rndspawnspeaker") {
+                   binaural.addRndSpeaker(subVals[0],
+                            atof(subVals[1].c_str()), // x1
+                            atof(subVals[2].c_str()), // y1
+                            atof(subVals[3].c_str()), // z1
+                            atof(subVals[4].c_str()), // x2
+                            atof(subVals[5].c_str()), // y2
+                            atof(subVals[6].c_str()), // z2
+                            atof(subVals[7].c_str()), // volume
+                            atof(subVals[8].c_str()), // total time
+                            atof(subVals[9].c_str()), // min pause
+                            atof(subVals[10].c_str()),  // max pause
+                            atof(subVals[11].c_str()), // min speed
+                            atof(subVals[12].c_str()) // max speed
+
+                    );
                 }
 
                 if (arg == "microphone") {
@@ -1495,7 +1848,10 @@ void configEngineByFile(BinauralEngine &binaural, string fileName) {
                     float z1 = atof(subVals[2].c_str()), x2 = atof(subVals[3].c_str());
                     float y2 = atof(subVals[4].c_str()), z2 = atof(subVals[5].c_str());
                     float amount = atof(subVals[6].c_str());
-                    binaural.addWall(x1, y1, z1, x2, y2, z2, amount);
+                    Wall *wall = binaural.addWall(x1, y1, z1, x2, y2, z2, amount);
+                    if (subVals[7] != "") {
+                        wall->modifier.configByString(subVals[7]);
+                    }
                 }
 
                 if (arg == "room") {
@@ -1530,6 +1886,10 @@ void configEngineByFile(BinauralEngine &binaural, string fileName) {
                 if (arg == "additionaltime") {
                     binaural.settings.additionalTime = atof(subVals[0].c_str());
                 }
+
+                if (arg == "randomseed") {
+                    binaural.settings.randomSeed = atoi(subVals[0].c_str());
+                }
             }
         }
 
@@ -1557,10 +1917,8 @@ int main(int argc, char** argv) {
     /* Lets the engine prepare its objects and start the process */
     binaural.start();
 
-
     /* This prints the generated 3D scene roughly as console characters in top view */
     binaural.printSetup(79, 20, 0);
-
 
     /* This is just temporary. It lets the engine do the actual calculation of sound samples completely.
     Later, this function will manage threads and tasks. */
@@ -1568,8 +1926,6 @@ int main(int argc, char** argv) {
 
     /* Stop objects, write files, free memory */
     binaural.stop(true);
-
-
 
     return 0;
 }

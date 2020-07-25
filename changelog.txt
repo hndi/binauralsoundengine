@@ -1,5 +1,12 @@
-0.1
-* First running version
+0.3
+* Wall modifiers (square, sine, triangle)
+* Random spawn speakers
+* Improved random number handling
+* New setting: Random seed
+* Minor improvements and bugfixes
 
 0.2
 * Speakers can now move by using keyframes
+
+0.1
+* First running version
