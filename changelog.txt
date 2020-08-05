@@ -1,3 +1,9 @@
+0.4
+* High frequency damping of distant/reflective sounds
+* New setting: airdamping
+* Fixed a bug where direct samples were not saved
+* Different bug fixes and code cleanup
+
 0.3
 * Wall modifiers (square, sine, triangle)
 * Random spawn speakers

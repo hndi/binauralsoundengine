@@ -109,3 +109,13 @@ Format: samplerate=<sample rate>
 reflection (in in big rooms or small rooms with many bounces and reflection amounts) a longer additional
 audio time is required. The value is a floating point with a default value of 30 seconds.
 Format: additionaltime=<additional time in seconds>
+
+"randomseed" initiates the random number generator. The same seed will result in the same result
+each time (same random spawn speakers, same reflectors). Changing the number will generate a new scene.
+Default is 1.
+Format: randomseed=<number>
+
+"airdamping" is the amount of lowering high frequencies by higher distances between the sound source and
+microphones. Reflections are dampened stronger since the sound waves travel a longer distance in total. A
+high value results in lower frequency reduction, a low value in greater reduction. Default is 100.
+Format: airdamping=<value>

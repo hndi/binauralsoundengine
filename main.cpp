@@ -222,13 +222,13 @@ uint8_t Microphone::writeFile() {
 
         /* just tried this value and got the best result. Todo: use Settings to be able to change it.
         The value adjusts the relation between direct and indirect samples */
-        float reflectAreaFactor = 3.5;
+        float reflectAreaFactor = 7.5;
 
         /* Here the the volume of reflection samples is adjusted to maintain the same volume for indirect
         samples, independent from the number of reflection passes. Otherwise reflections would get louder
         by the number of passes. */
         float reflectorFactor = 1.0 / pow(totalReflections, 0.5) * reflectAreaFactor;
-        if (totalReflectArea == 0) {
+        if (totalReflectArea == 0 || totalReflections == 0) {
             reflectAreaFactor = 1.0;
             reflectorFactor = 1.0;
         }
@@ -249,6 +249,7 @@ uint8_t Microphone::writeFile() {
             }
             for (uint32_t x = 0; x < bufferSize / stepSize; x++) {
                 buffer[x * stepSize] = drctBuffer[buffPos + x] + (reflBuffer[buffPos + x] * reflectorFactor);
+                if (buffer[x * stepSize] > 5) cout << "BUFF: " << buffer[x * stepSize] << '\t';
                 if (secondChanMic != nullptr) {
                     buffer[x * stepSize + 1] = secondChanMic->drctBuffer[buffPos + x] + (secondChanMic->reflBuffer[buffPos + x] * reflectorFactor);
                 }
@@ -557,6 +558,8 @@ class BinauralEngine {
                 float micPowDist[MAX_MICROPHONES];
                 uint32_t micSampleDist[MAX_MICROPHONES];
                 int16_t micCnt;
+                double damper[MAX_MICROPHONES];
+                double damperStrength[MAX_MICROPHONES];
 
                 /* These structs contain movement information and keyframes for speakers */
                 struct Movement {
@@ -580,6 +583,8 @@ class BinauralEngine {
             uint32_t maxReflectionPasses = 100; //Number of reflection passes before the engine quits
             uint16_t saveMicsEveryNrOfPasses = 0; //The engine saves the mic files every given nr of passes
             uint32_t randomSeed = 1;
+            float airDamping = 100; /* The amount of high frequency reduction over long distances. Tried out
+                                    different values,75-170 seems realistic, 100 was the most plausible val*/
         } settings;
 
         BinauralEngine();
@@ -636,12 +641,23 @@ class BinauralEngine {
                 double currMicDist;
                 uint32_t currMicSampleDist;
                 double finalFactor;
+
+                /* The high frequency dampers act like frequency crossovers and reduce high frequencies depending on the
+                damperStrength. This is not perfect but the best working solution i figured out yet. */
+                double damper;
+                double damperStrength;
             }tMics[MAX_MICROPHONES];
         };
 
         void calcSamples(ThreadData *td);
+        void calcDirectStaticSpeakerSamples(SpeakerBE *speaker);
+        void calcDirectMovingSpeakerSamples(SpeakerBE *speaker);
         void calcDirectRndSpeakerSamples(RandomSpawnSpeaker *speaker);
+        void calcReflStaticSpeakerSamples(SpeakerBE *speaker, Reflector *refl, uint16_t &nrReflections);
+        void calcReflMovingSpeakerSamples(SpeakerBE *speaker, Reflector *refl, uint16_t &nrReflections);
         void calcReflRndSpeakerSamples(RandomSpawnSpeaker *speaker, Reflector *refl, uint16_t &nrReflections);
+
+
         int16_t findRandomWallByArea(int16_t exceptWallNr);
 
         SpeakerBE *speakers[MAX_SPEAKERS];
@@ -675,9 +691,10 @@ BinauralEngine::~BinauralEngine() {
     reset();
 }
 
-/* calcMicLists finds out, which microphones can "hear" which speakers, calculates their distance, and, how much
-the sound is reduced by the distance. This information will later be used by calcSamples in TASK_DIRECT section
+/* calcMicLists finds out, which microphones can "hear" which speakers directly, calculates their distance, and,
+how much the sound is reduced by the distance. This information will later be used by calcDirectStaticSpeakerSamples
 to increase the calculation speed */
+
 void BinauralEngine::calcMicLists() {
     int16_t i, x;
     float d;
@@ -695,6 +712,8 @@ void BinauralEngine::calcMicLists() {
                         speakers[i]->micPowDist[x] = pow(d, 2.0);
                         speakers[i]->micNr[speakers[i]->micCnt] = x;
                         speakers[i]->micCnt++;
+                        speakers[i]->damper[x] = 0.0;
+                        speakers[i]->damperStrength[x] = 1.0 + (d / settings.airDamping);
                     }
                 }
 
@@ -1030,7 +1049,7 @@ int8_t BinauralEngine::start() {
 
     }
 
-    //Additional time is added to allow sound delay to be processed.
+    //Additional time is added to allow sound reverb to be processed.
     if (totalSamples > 0) {
         totalSamples += settings.additionalTime * settings.sampleRate;
     }
@@ -1346,19 +1365,19 @@ void BinauralEngine::printSetup(uint8_t width, uint8_t height, uint8_t view) {
     }
 }
 
-/* The calcSamples function reads all samples from all speakers, calculates the changing of the amplitudes
-by wall damping and distance and writes the results into the microphone buffers. It was designed to
-be executed in multiple threads, but this is not implemented yet. It can perform two tasks: Calculate
-direct samples, from speakers to microphones, and reflection samples, in which the sound samples come
-from speakers bounce off walls and then arrive microphones. The samples are modified in two main ways:
-The first is the lowering of volume (todo: the reduction of high frequencies) and the second is the delay
-that is caused by sound waves traveling through air. Both are very important for binaural hearing and
-allow to percieve the location of the sound source directly and the dimensions of the room by locating
+/* The calcSamples function  calls further functions that read all samples from all speakers, calculate
+the changing of the amplitudes and high frequencies by wall damping and distance and write the results into
+the microphone buffers. It was designed to be executed in multiple threads, but this is not implemented yet.
+It can perform two tasks: Calculate direct samples, from speakers to microphones, and reflection samples,
+in which the sound samples come from speakers bounce off walls and then arrive microphones. The samples are
+modified in three main ways: The first is the lowering of volume  and the second is the delay
+that is caused by sound waves traveling through air, the third is the reduction of high frequencies when distance
+and damping increase. All are very important for binaural hearing and allow to percieve the location of
+the sound source directly and the dimensions of the room by locating
 indirect sound waves from walls. */
 void BinauralEngine::calcSamples(ThreadData *td) {
-    double amp;
     int32_t speakerNr, micNr;
-    uint32_t sampleNr, reflNr;
+    uint32_t reflNr;
 
     switch (td->task) {
 
@@ -1366,81 +1385,21 @@ void BinauralEngine::calcSamples(ThreadData *td) {
         calcMicLists*/
         case TASK_DIRECT:
             for (speakerNr = 0; speakerNr < actualSpeakers || speakerNr < actualRndSpeakers; speakerNr++) {
+
                 if (speakers[speakerNr] != nullptr) {
 
-                    if (speakers[speakerNr]->movement.useMovement == false) {
-                        //todo: if speaker is too far away, it could exceed limits of the buffer
-                        for (sampleNr = 0; sampleNr < speakers[speakerNr]->sampleCount; sampleNr++) {
-                            amp = speakers[speakerNr]->samples[sampleNr];
-                            for (micNr = 0; micNr < speakers[speakerNr]->micCnt; micNr++) {
+                    if (speakers[speakerNr]->movement.useMovement == false) { // Static speaker
 
-                                /* Now each sound sample is written in the direct mic buffer, but
-                                'in the future', depending on the distance of the sound source to the
-                                microphone. additionally the volume is reduced*/
-                                mics[speakers[speakerNr]->micNr[micNr]]->
-                                    drctBuffer[(sampleNr + speakers[speakerNr]->micSampleDist[micNr])]
-                                    += amp / speakers[speakerNr]->micDist[micNr];
-                            }
-                        }
+                        calcDirectStaticSpeakerSamples(speakers[speakerNr]);
 
-                    } else { //Keyframes are used.
+                    } else { // Moving speaker, keyframes are used.
 
-                        /* In this branch, speakers are moved by following a path specified by keyframes.
-                        For each sample, the position and distance has to be recalculated */
-                        uint16_t currKeyFrame = 0;
-                        uint32_t iMicSampleDist;
-                        double dMicSampleDist, rest;
-                        double micDist;
-                        Pos speakerPos = speakers[speakerNr]->pos;
-//yyy
-                        for (sampleNr = 0; sampleNr < speakers[speakerNr]->sampleCount; sampleNr++) {
-                            amp = speakers[speakerNr]->samples[sampleNr];
-                            if (sampleNr >= speakers[speakerNr]->movement.keyFrames[currKeyFrame + 1].sampleNr) {
-
-                                /* Check if we have to enter a new keyframe */
-                                if (currKeyFrame + 1<= speakers[speakerNr]->movement.nrKeyFrames) {
-                                    currKeyFrame++;
-                                    speakerPos = speakers[speakerNr]->movement.keyFrames[currKeyFrame].pos;
-                                }
-                            }
-
-                            /* Move the speaker by the delta per keyframe */
-                            speakerPos.x += speakers[speakerNr]->movement.keyFrames[currKeyFrame].deltaPerSample.x;
-                            speakerPos.y += speakers[speakerNr]->movement.keyFrames[currKeyFrame].deltaPerSample.y;
-                            speakerPos.z += speakers[speakerNr]->movement.keyFrames[currKeyFrame].deltaPerSample.z;
-
-                            for (micNr = 0; micNr < speakers[speakerNr]->micCnt; micNr++) {
-                                /* This is the same as Pos::calcDistance, but with a minimum of function calls
-                                for significant higher performance */
-                                micDist = sqrt((speakerPos.x - mics[speakers[speakerNr]->micNr[micNr]]->pos.x) *
-                                               (speakerPos.x - mics[speakers[speakerNr]->micNr[micNr]]->pos.x) +
-                                               (speakerPos.y - mics[speakers[speakerNr]->micNr[micNr]]->pos.y) *
-                                               (speakerPos.y - mics[speakers[speakerNr]->micNr[micNr]]->pos.y) +
-                                               (speakerPos.z - mics[speakers[speakerNr]->micNr[micNr]]->pos.z) *
-                                               (speakerPos.z - mics[speakers[speakerNr]->micNr[micNr]]->pos.z)
-                                                );
-
-                                dMicSampleDist = micDist / MPS * settings.sampleRate;
-
-                                /* When moving, two samples have to be written to maintain a smooth tranistion if
-                                the changing distance of the sound source causes a switch of the target sample.
-                                The difference between int and double is used to increase the impact on the second
-                                and decrease it on the first sample */
-                                iMicSampleDist = dMicSampleDist;
-                                rest = dMicSampleDist - iMicSampleDist;
-
-                                mics[speakers[speakerNr]->micNr[micNr]]->
-                                    drctBuffer[(sampleNr + iMicSampleDist)]
-                                    += (amp / micDist) * (1.0 - rest);
-                                mics[speakers[speakerNr]->micNr[micNr]]->
-                                    drctBuffer[(sampleNr + iMicSampleDist + 1)]
-                                    += (amp / micDist) * (rest);
-                            }
-                        }
+                        calcDirectMovingSpeakerSamples(speakers[speakerNr]);
                     }
                 }
 
-                if (rndSpeakers[speakerNr] != nullptr) {
+                if (rndSpeakers[speakerNr] != nullptr) { // Random spawn speaker
+
                     calcDirectRndSpeakerSamples(rndSpeakers[speakerNr]);
                 }
             }
@@ -1517,125 +1476,24 @@ void BinauralEngine::calcSamples(ThreadData *td) {
 
                 }
 
-                /* Now all samples of all speakers with all reflectors are written to all microphones */
-                double speakerDist;
+                /* With these prepared data, the target functions are called that will process the sound
+                samples. */
                 for (speakerNr = 0; speakerNr < actualSpeakers || speakerNr < actualRndSpeakers; speakerNr++) {
-                    if (speakers[speakerNr] != nullptr) {
 
-                        /* The distance of the current speaker to the first reflector is measured and
-                        later added to the sum of the current reflector and mic  distance to later rapidly
-                        use those values for the final calculations */
-                        speakerDist = Pos::calcDistance(speakers[speakerNr]->pos, refl[0].pos);
+                    if (speakers[speakerNr] != nullptr) {
 
                         if (speakers[speakerNr]->movement.useMovement == false) { //static speaker
 
-                            for (reflNr = 0; reflNr < nrReflections; reflNr++) {
-                                refl[reflNr].currTotalDistance = speakerDist + refl[reflNr].totalDistance;
-                                refl[reflNr].currTotalSamples = Pos::distanceToSamples(refl[reflNr].currTotalDistance, settings.sampleRate);
+                            calcReflStaticSpeakerSamples(speakers[speakerNr], refl, nrReflections);
 
-                                /* Add those final values to all target microphones and build a final factor
-                                for fast calculations */
-                                for (micNr = 0; micNr < actualMicrophones; micNr++) {
-                                    refl[reflNr].tMics[micNr].currMicDist = speakerDist + refl[reflNr].tMics[micNr].micDist;
-                                    refl[reflNr].tMics[micNr].currMicSampleDist = Pos::distanceToSamples(refl[reflNr].tMics[micNr].currMicDist, settings.sampleRate);
-                                    refl[reflNr].tMics[micNr].finalFactor = refl[reflNr].totalReflAmount / refl[reflNr].tMics[micNr].currMicDist;
+                        } else { // Moving Speaker, keyframes are used
 
-                                    /* check if the sample distance (number of the samples 'in the future' caused by
-                                    the travel time of the sound waves exceeds the total buffer length - and reduce the
-                                    number of bounces, if so. Display a warning once */
-                                    if (refl[reflNr].tMics[micNr].currMicSampleDist >= settings.additionalTime * settings.sampleRate) {
-                                        nrReflections = reflNr - 1;
-                                        if (sampleOverflowWarning == false) {
-                                        sampleOverflowWarning = true;
-                                            cout << "\rWARNING: Reflection time exceed sound length. Reflection bounces have been reduced. To avoid this, increase additional length to the audio buffer or reduce reflection bounces." << endl;
-                                        }
-                                    }
-                                }
-                            }
-
-
-                            /* Finally calculate the samples using the previously generated sample distances and
-                            amplitude reductions */
-                            for (sampleNr = 0; sampleNr < speakers[speakerNr]->sampleCount; sampleNr++) {
-                                for (reflNr = 0; reflNr < nrReflections; reflNr++) {
-                                    for (micNr = 0; micNr < actualMicrophones; micNr++) {
-                                        mics[micNr]->reflBuffer[sampleNr + refl[reflNr].tMics[micNr].currMicSampleDist]
-                                        += speakers[speakerNr]->samples[sampleNr] *
-                                        refl[reflNr].tMics[micNr].finalFactor;
-                                    }
-                                }
-                            }
-
-                        } else { // Movement is used
-                            /* In this branch, speakers are moved by following a path specified by keyframes.
-                            For each sample, the position and distance has to be recalculated */
-
-                            /* Reflector distances are calculated, but without the distance of the speaker
-                            to the first reflector since this will change during the samples */
-                            for (reflNr = 0; reflNr < nrReflections; reflNr++) {
-                                refl[reflNr].currTotalDistance = refl[reflNr].totalDistance;
-                                refl[reflNr].currTotalSamples = Pos::distanceToSamples(refl[reflNr].currTotalDistance, settings.sampleRate);
-
-                                for (micNr = 0; micNr < actualMicrophones; micNr++) {
-                                    refl[reflNr].tMics[micNr].currMicDist = refl[reflNr].tMics[micNr].micDist;
-                                    refl[reflNr].tMics[micNr].currMicSampleDist = Pos::distanceToSamples(refl[reflNr].tMics[micNr].currMicDist, settings.sampleRate);
-                                }
-                            }
-
-                            /* Todo: Overflow warning and reduction of bounces to prevent overflow when the
-                            additional time is too short */
-
-                            //samples berechnen
-                            uint16_t currKeyFrame = 0;
-                            uint32_t iReflSampleDist;
-                            double dReflSampleDist, rest;
-                            double reflDist;
-                            Pos speakerPos = speakers[speakerNr]->pos;
-
-                            for (sampleNr = 0; sampleNr < speakers[speakerNr]->sampleCount; sampleNr++) {
-
-                                if (sampleNr >= speakers[speakerNr]->movement.keyFrames[currKeyFrame + 1].sampleNr) {
-                                    if (currKeyFrame + 1<= speakers[speakerNr]->movement.nrKeyFrames) {
-                                        currKeyFrame++;
-                                        speakerPos = speakers[speakerNr]->movement.keyFrames[currKeyFrame].pos;
-                                    }
-                                }
-
-                                /* Move the speaker by the delta per keyframe */
-                                speakerPos.x += speakers[speakerNr]->movement.keyFrames[currKeyFrame].deltaPerSample.x;
-                                speakerPos.y += speakers[speakerNr]->movement.keyFrames[currKeyFrame].deltaPerSample.y;
-                                speakerPos.z += speakers[speakerNr]->movement.keyFrames[currKeyFrame].deltaPerSample.z;
-
-                                for (reflNr = 0; reflNr < nrReflections; reflNr++) {
-
-                                    /* This is the same as Pos::calcDistance, but with a minimum of function calls
-                                    for significant higher performance */
-                                    reflDist = sqrt((speakerPos.x - refl[0].pos.x) *
-                                                   (speakerPos.x - refl[0].pos.x) +
-                                                   (speakerPos.y - refl[0].pos.y) *
-                                                   (speakerPos.y - refl[0].pos.y) +
-                                                   (speakerPos.z - refl[0].pos.z) *
-                                                   (speakerPos.z - refl[0].pos.z)
-                                                    );
-                                    dReflSampleDist = reflDist / MPS * settings.sampleRate;
-
-                                    /* When moving, two samples have to be written to maintain a smooth tranistion if
-                                    the changing distance of the sound source causes a switch of the target sample.
-                                    The difference between int and double is used to increase the impact on the second
-                                    and decrease it on the first sample */
-                                    iReflSampleDist = dReflSampleDist;
-                                    rest = dReflSampleDist - iReflSampleDist;
-
-                                    for (micNr = 0; micNr < actualMicrophones; micNr++) {
-                                        mics[micNr]->reflBuffer[sampleNr + refl[reflNr].tMics[micNr].currMicSampleDist + iReflSampleDist] += speakers[speakerNr]->samples[sampleNr] * refl[reflNr].totalReflAmount / (refl[reflNr].tMics[micNr].currMicDist + reflDist)  * (1.0 - rest);
-                                        mics[micNr]->reflBuffer[sampleNr + refl[reflNr].tMics[micNr].currMicSampleDist + iReflSampleDist + 1] += speakers[speakerNr]->samples[sampleNr] * refl[reflNr].totalReflAmount / (refl[reflNr].tMics[micNr].currMicDist + reflDist)  * rest;
-                                    }
-                                }
-                            }
+                            calcReflMovingSpeakerSamples(speakers[speakerNr], refl, nrReflections);
                         }
                     }
 
-                    if (rndSpeakers[speakerNr] != nullptr) {
+                    if (rndSpeakers[speakerNr] != nullptr) { // Random spawn speakers
+
                         calcReflRndSpeakerSamples(rndSpeakers[speakerNr], refl, nrReflections);
                     }
                 }
@@ -1645,6 +1503,98 @@ void BinauralEngine::calcSamples(ThreadData *td) {
     }
 }
 
+/* Sound samples of direct static speakers are processed here. */
+void BinauralEngine::calcDirectStaticSpeakerSamples(SpeakerBE *speaker) {
+    double amp;
+
+    //todo: if speaker is too far away, it could exceed limits of the buffer
+    for (uint32_t sampleNr = 0; sampleNr < speaker->sampleCount; sampleNr++) {
+        amp = speaker->samples[sampleNr];
+        for (int32_t micNr = 0; micNr < speaker->micCnt; micNr++) {
+
+            /* Now each sound sample is written in the direct mic buffer, but
+            'in the future', depending on the distance of the sound source to the
+            microphone. additionally the volume is reduced*/
+            speaker->damper[micNr] += (amp - speaker->damper[micNr]) /
+                speaker->damperStrength[micNr];
+
+            //mics[speakers[speakerNr]->micNr[micNr]]->
+            //    drctBuffer[(sampleNr + speakers[speakerNr]->micSampleDist[micNr])]
+            //    += amp / speakers[speakerNr]->micDist[micNr];
+            mics[speaker->micNr[micNr]]->
+                drctBuffer[(sampleNr + speaker->micSampleDist[micNr])]
+                += speaker->damper[micNr] / speaker->micDist[micNr];
+        }
+    }
+}
+
+/* Sound samples of moving speakers with keyframes are processed here. */
+void BinauralEngine::calcDirectMovingSpeakerSamples(SpeakerBE *speaker) {
+    uint16_t currKeyFrame = 0;
+    uint32_t iMicSampleDist;
+    int32_t micNr;
+    double dMicSampleDist, rest;
+    double micDist, amp;
+    Pos speakerPos = speaker->pos;
+
+    /* The high frequency dampers act like frequency crossovers and reduce high frequencies depending on the
+    damperStrength. This is not perfect but the best working solution i figured out yet. */
+    double damper[speaker->micCnt], damperStrength[speaker->micCnt];
+
+
+    /* Reset all high frequency dampers */
+    for (micNr = 0; micNr < speaker->micCnt; micNr++) {
+        damper[micNr] = 0.0;
+    }
+
+    for (uint32_t sampleNr = 0; sampleNr < speaker->sampleCount; sampleNr++) {
+        amp = speaker->samples[sampleNr];
+        if (sampleNr >= speaker->movement.keyFrames[currKeyFrame + 1].sampleNr) {
+
+            /* Check if we have to enter a new keyframe */
+            if (currKeyFrame + 1<= speaker->movement.nrKeyFrames) {
+                currKeyFrame++;
+                speakerPos = speaker->movement.keyFrames[currKeyFrame].pos;
+            }
+        }
+
+        /* Move the speaker by the delta per keyframe */
+        speakerPos.x += speaker->movement.keyFrames[currKeyFrame].deltaPerSample.x;
+        speakerPos.y += speaker->movement.keyFrames[currKeyFrame].deltaPerSample.y;
+        speakerPos.z += speaker->movement.keyFrames[currKeyFrame].deltaPerSample.z;
+
+        for (micNr = 0; micNr < speaker->micCnt; micNr++) {
+            /* This is the same as Pos::calcDistance, but with a minimum of function calls
+            for significant higher performance */
+            micDist = sqrt((speakerPos.x - mics[speaker->micNr[micNr]]->pos.x) *
+                           (speakerPos.x - mics[speaker->micNr[micNr]]->pos.x) +
+                           (speakerPos.y - mics[speaker->micNr[micNr]]->pos.y) *
+                           (speakerPos.y - mics[speaker->micNr[micNr]]->pos.y) +
+                           (speakerPos.z - mics[speaker->micNr[micNr]]->pos.z) *
+                           (speakerPos.z - mics[speaker->micNr[micNr]]->pos.z)
+                            );
+
+            dMicSampleDist = micDist / MPS * settings.sampleRate;
+            damperStrength[micNr] =  1.0 + micDist / settings.airDamping;
+
+            /* When moving, two samples have to be written to maintain a smooth tranistion if
+            the changing distance of the sound source causes a switch of the target sample.
+            The difference between int and double is used to increase the impact on the second
+            and decrease it on the first sample */
+            iMicSampleDist = dMicSampleDist;
+            rest = dMicSampleDist - iMicSampleDist;
+
+            damper[micNr] += (amp - damper[micNr]) / damperStrength[micNr];
+
+            mics[speaker->micNr[micNr]]->drctBuffer[(sampleNr + iMicSampleDist)] +=
+                    (damper[micNr] / micDist) * (1.0 -rest);
+            mics[speaker->micNr[micNr]]->drctBuffer[(sampleNr + iMicSampleDist + 1)] +=
+                    (damper[micNr] / micDist) * (rest);
+        }
+    }
+}
+
+/* Sound samples of random spawn speakers are processed here. */
 void BinauralEngine::calcDirectRndSpeakerSamples(RandomSpawnSpeaker *speaker) {
     int32_t micNr, spawnNr;
     uint32_t sampleNr;
@@ -1653,10 +1603,19 @@ void BinauralEngine::calcDirectRndSpeakerSamples(RandomSpawnSpeaker *speaker) {
     uint32_t micSampleDist[actualMicrophones];
     uint32_t speedSampleCount;
 
+    /* The high frequency dampers act like frequency crossovers and reduce high frequencies depending on the
+    damperStrength. This is not perfect but the best working solution i figured out yet. */
+    /* The high frequency dampers act like frequency crossovers and reduce high frequencies depending on the
+    damperStrength. This is not perfect but the best working solution i figured out yet. */
+    double damper[actualMicrophones];
+    double damperStrength[actualMicrophones];
+
     for (spawnNr = 0; spawnNr < speaker->nrSpawns; spawnNr++) {
         for (micNr = 0; micNr < actualMicrophones; micNr++) {
             micDist[micNr] = Pos::calcDistance(speaker->spawns[spawnNr].pos, mics[micNr]->pos);
             micSampleDist[micNr] = Pos::distanceToSamples(micDist[micNr], settings.sampleRate);
+            damper[micNr] = 0.0;
+            damperStrength[micNr] = 1.0 + micDist[micNr] / settings.airDamping;
         }
 
         speedSampleCount = speaker->sampleCount / speaker->spawns[spawnNr].speed;
@@ -1664,13 +1623,152 @@ void BinauralEngine::calcDirectRndSpeakerSamples(RandomSpawnSpeaker *speaker) {
             amp = speaker->samples[(uint32_t)(sampleNr * speaker->spawns[spawnNr].speed)];
             for (micNr = 0; micNr < actualMicrophones; micNr++) {
 
+                damper[micNr] += (amp - damper[micNr]) / damperStrength[micNr];
                 mics[micNr]->
                     drctBuffer[(sampleNr + speaker->spawns[spawnNr].startSample) + micSampleDist[micNr]]
-                    += amp / micDist[micNr];
+                    += damper[micNr] / micDist[micNr];
             }
         }
     }
 }
+
+/* Reflecting sound samples of static speakers are processed here. */
+void BinauralEngine::calcReflStaticSpeakerSamples(SpeakerBE *speaker, Reflector *refl, uint16_t &nrReflections) {
+    uint16_t reflNr;
+    int32_t micNr;
+    uint32_t sampleNr;
+    double speakerDist;
+
+    /* Calculate the distance of the speaker to the first reflector */
+    speakerDist = Pos::calcDistance(speaker->pos, refl[0].pos);
+
+    /* And add them to the precalculated total distances in all reflector points */
+    for (reflNr = 0; reflNr < nrReflections; reflNr++) {
+        refl[reflNr].currTotalDistance = speakerDist + refl[reflNr].totalDistance;
+        refl[reflNr].currTotalSamples = Pos::distanceToSamples(refl[reflNr].currTotalDistance, settings.sampleRate);
+
+        /* Add those final values to all target microphones and build a final factor
+        for fast calculations */
+        for (micNr = 0; micNr < actualMicrophones; micNr++) {
+            refl[reflNr].tMics[micNr].currMicDist = speakerDist + refl[reflNr].tMics[micNr].micDist;
+            refl[reflNr].tMics[micNr].currMicSampleDist = Pos::distanceToSamples(refl[reflNr].tMics[micNr].currMicDist, settings.sampleRate);
+            refl[reflNr].tMics[micNr].finalFactor = 1 / refl[reflNr].tMics[micNr].currMicDist;
+            refl[reflNr].tMics[micNr].damper = 0.0;
+            refl[reflNr].tMics[micNr].damperStrength = ((1.0 + refl[reflNr].tMics[micNr].currMicDist / settings.airDamping) /
+                    refl[reflNr].totalReflAmount);
+            /* check if the sample distance (number of the samples 'in the future' caused by
+            the travel time of the sound waves exceeds the total buffer length - and reduce the
+            number of bounces, if so. Display a warning once */
+            if (refl[reflNr].tMics[micNr].currMicSampleDist >= settings.additionalTime * settings.sampleRate) {
+                nrReflections = reflNr - 1;
+                if (sampleOverflowWarning == false) {
+                sampleOverflowWarning = true;
+                    cout << "\rWARNING: Reflection time exceed sound length. Reflection bounces have been reduced. To avoid this, increase additional length to the audio buffer or reduce reflection bounces." << endl;
+                }
+            }
+        }
+    }
+
+
+    /* Finally calculate the samples using the previously generated sample distances and
+    amplitude reductions */
+    for (sampleNr = 0; sampleNr < speaker->sampleCount; sampleNr++) {
+        for (reflNr = 0; reflNr < nrReflections; reflNr++) {
+            for (micNr = 0; micNr < actualMicrophones; micNr++) {
+
+                refl[reflNr].tMics[micNr].damper += (speaker->samples[sampleNr]
+                    - refl[reflNr].tMics[micNr].damper) / refl[reflNr].tMics[micNr].damperStrength;
+
+                mics[micNr]->reflBuffer[sampleNr + refl[reflNr].tMics[micNr].currMicSampleDist]
+                    += refl[reflNr].tMics[micNr].damper * refl[reflNr].tMics[micNr].finalFactor;
+            }
+        }
+    }
+}
+
+/* Reflecting sound samples of moving speakers are processed here. */
+void BinauralEngine::calcReflMovingSpeakerSamples(SpeakerBE *speaker, Reflector *refl, uint16_t &nrReflections) {
+    int32_t micNr;
+    uint32_t sampleNr;
+    uint16_t reflNr;
+
+    /* Reflector distances are calculated, but without the distance of the speaker
+    to the first reflector since this will change during the samples */
+    for (reflNr = 0; reflNr < nrReflections; reflNr++) {
+        refl[reflNr].currTotalDistance = refl[reflNr].totalDistance;
+        refl[reflNr].currTotalSamples = Pos::distanceToSamples(refl[reflNr].currTotalDistance, settings.sampleRate);
+
+        for (micNr = 0; micNr < actualMicrophones; micNr++) {
+            refl[reflNr].tMics[micNr].currMicDist = refl[reflNr].tMics[micNr].micDist;
+            refl[reflNr].tMics[micNr].currMicSampleDist = Pos::distanceToSamples(refl[reflNr].tMics[micNr].currMicDist, settings.sampleRate);
+            refl[reflNr].tMics[micNr].damper = 0.0;
+        }
+    }
+
+    /* Todo: Overflow warning and reduction of bounces to prevent memory access problems when the
+    additional time is too short */
+
+    uint16_t currKeyFrame = 0;
+    uint32_t iReflSampleDist;
+    double dReflSampleDist, rest;
+    double reflDist;
+    Pos speakerPos = speaker->pos;
+
+    for (sampleNr = 0; sampleNr < speaker->sampleCount; sampleNr++) {
+
+        /* New keyframe? If yes, apply keyframe values */
+        if (sampleNr >= speaker->movement.keyFrames[currKeyFrame + 1].sampleNr) {
+            if (currKeyFrame + 1<= speaker->movement.nrKeyFrames) {
+                currKeyFrame++;
+                speakerPos = speaker->movement.keyFrames[currKeyFrame].pos;
+            }
+        }
+
+        /* Move the speaker by the delta per keyframe */
+        speakerPos.x += speaker->movement.keyFrames[currKeyFrame].deltaPerSample.x;
+        speakerPos.y += speaker->movement.keyFrames[currKeyFrame].deltaPerSample.y;
+        speakerPos.z += speaker->movement.keyFrames[currKeyFrame].deltaPerSample.z;
+
+        /* Calculate all samples for each reflector */
+        for (reflNr = 0; reflNr < nrReflections; reflNr++) {
+
+            /* This is the same as Pos::calcDistance, but with a minimum of function calls
+            for significant higher performance */
+            reflDist = sqrt((speakerPos.x - refl[0].pos.x) *
+                           (speakerPos.x - refl[0].pos.x) +
+                           (speakerPos.y - refl[0].pos.y) *
+                           (speakerPos.y - refl[0].pos.y) +
+                           (speakerPos.z - refl[0].pos.z) *
+                           (speakerPos.z - refl[0].pos.z)
+                            );
+            /* floating point value of time delay in samples, depending on the physical
+            distance of the speaker to first reflector position. This is added to the
+            total distance of the sound traveling from reflectors to microhpones. */
+            dReflSampleDist = reflDist / MPS * settings.sampleRate;
+
+            /* When moving, two samples have to be written to maintain a smooth tranistion if
+            the changing distance of the sound source causes a switch of the target sample.
+            The difference between int and double is used to increase the impact on the second
+            and decrease it on the first sample */
+            iReflSampleDist = dReflSampleDist;
+            rest = dReflSampleDist - iReflSampleDist;
+
+            for (micNr = 0; micNr < actualMicrophones; micNr++) {
+                refl[reflNr].tMics[micNr].damperStrength = 1.0 + (refl[reflNr].tMics[micNr].currMicDist + reflDist) / settings.airDamping;
+                refl[reflNr].tMics[micNr].damper +=  (speaker->samples[sampleNr] - refl[reflNr].tMics[micNr].damper) /
+                        refl[reflNr].tMics[micNr].damperStrength;
+
+
+                mics[micNr]->reflBuffer[sampleNr + refl[reflNr].tMics[micNr].currMicSampleDist + iReflSampleDist] +=
+                       refl[reflNr].tMics[micNr].damper / (refl[reflNr].tMics[micNr].currMicDist + reflDist) * (1.0 - rest);
+                mics[micNr]->reflBuffer[sampleNr + refl[reflNr].tMics[micNr].currMicSampleDist + iReflSampleDist + 1] +=
+                       refl[reflNr].tMics[micNr].damper / (refl[reflNr].tMics[micNr].currMicDist + reflDist) * rest;
+
+            }
+        }
+    }
+}
+
 
 void BinauralEngine::calcReflRndSpeakerSamples(RandomSpawnSpeaker *speaker, Reflector *refl, uint16_t &nrReflections) {
     int32_t reflNr, sampleNr, micNr, spawnNr, speedSampleCount;
@@ -1684,6 +1782,7 @@ void BinauralEngine::calcReflRndSpeakerSamples(RandomSpawnSpeaker *speaker, Refl
         for (micNr = 0; micNr < actualMicrophones; micNr++) {
             refl[reflNr].tMics[micNr].currMicDist = refl[reflNr].tMics[micNr].micDist;
             refl[reflNr].tMics[micNr].currMicSampleDist = Pos::distanceToSamples(refl[reflNr].tMics[micNr].currMicDist, settings.sampleRate);
+            refl[reflNr].tMics[micNr].damper = 0.0;
         }
     }
 
@@ -1694,15 +1793,19 @@ void BinauralEngine::calcReflRndSpeakerSamples(RandomSpawnSpeaker *speaker, Refl
     Pos speakerPos;
 
     for (spawnNr = 0; spawnNr < speaker->nrSpawns; spawnNr++) {
+
+        /* Distance from speaker to the first reflector. This is needed later */
         speakerPos = speaker->spawns[spawnNr].pos;
         reflDist = Pos::calcDistance(speakerPos, refl[0].pos);
 
-        //hier alle reflektoren durchgehen, finale mic-distanz ausrechnen, unten dann anwenden
+        /* Calculate all samples for each reflector */
         for (reflNr = 0; reflNr < nrReflections; reflNr++) {
-            //relf[reflNr]
             for (micNr = 0; micNr < actualMicrophones; micNr++) {
                 refl[reflNr].tMics[micNr].currMicDist = refl[reflNr].tMics[micNr].micDist + reflDist;
                 refl[reflNr].tMics[micNr].currMicSampleDist = Pos::distanceToSamples(refl[reflNr].tMics[micNr].currMicDist, settings.sampleRate);
+
+                refl[reflNr].tMics[micNr].damperStrength = ((1.0 + refl[reflNr].tMics[micNr].currMicDist /
+                                                           settings.airDamping) / refl[reflNr].totalReflAmount);
             }
 
         }
@@ -1712,10 +1815,12 @@ void BinauralEngine::calcReflRndSpeakerSamples(RandomSpawnSpeaker *speaker, Refl
             for (reflNr = 0; reflNr < nrReflections; reflNr++) {
 
 
-                //yyy
                 for (micNr = 0; micNr < actualMicrophones; micNr++) {
+                    refl[reflNr].tMics[micNr].damper += (speaker->samples[(uint32_t)(sampleNr * speaker->spawns[spawnNr].speed)] -
+                                                         refl[reflNr].tMics[micNr].damper) / refl[reflNr].tMics[micNr].damperStrength;
+
                     mics[micNr]->reflBuffer[sampleNr + refl[reflNr].tMics[micNr].currMicSampleDist + speaker->spawns[spawnNr].startSample] +=
-                    speaker->samples[(uint32_t)(sampleNr * speaker->spawns[spawnNr].speed)] * refl[reflNr].totalReflAmount / refl[reflNr].tMics[micNr].currMicDist;
+                    refl[reflNr].tMics[micNr].damper / refl[reflNr].tMics[micNr].currMicDist;
                 }
             }
         }
@@ -1889,6 +1994,10 @@ void configEngineByFile(BinauralEngine &binaural, string fileName) {
 
                 if (arg == "randomseed") {
                     binaural.settings.randomSeed = atoi(subVals[0].c_str());
+                }
+
+                if (arg == "airdamping") {
+                    binaural.settings.airDamping = atof(subVals[0].c_str());
                 }
             }
         }
