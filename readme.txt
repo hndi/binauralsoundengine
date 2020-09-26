@@ -24,8 +24,9 @@ The content of the file is described below:
 ------ The following data can be put into the file that is processed by the filter ------
 
 The "speaker" plays a sound file at a threedimensional position in a desired volume. The position is
-measured in meters (like all other position values). The start delay (todo!) is optional as well as the
+measured in meters (like all other position values). The start delay is optional as well as the
 keyframes (see below).
+Flags are: 1 for "speaker disabled", 2 for "no direct pass", 4 for "no reflection pass"
 Format: speaker=<name>;<soundfile>;<X-Position>;<Y-Position>;<Z-Position>;<Volume>;[Start delay];[Keyframes];[Flags]
 Example:
 speaker=Speaker1;test.raw;1.0;1.0;1.75;1.0

@@ -1,3 +1,16 @@
+0.6
+* Engine: Added 'start delay' for speakers
+* Engine: Added flags ('disabled', 'no direct', 'no indirect') for speakers and rndspeakers
+* Engine: Fixed a bug that ignored reflection amount for moving speakers
+* GUI: Added perspectives: front and side
+* GUI: Added dialog for wall modifiers
+* GUI: Changed colors
+* GUI: Added fields for flags and start delay
+* GUI: Added 'total play time' for rndspeakers
+* GUI: Fixed windows bug that added new objects twice
+* Small bug fixes and improvements
+
+
 0.5
 * Names for all objects
 * version number
