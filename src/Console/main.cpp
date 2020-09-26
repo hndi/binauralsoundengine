@@ -249,7 +249,6 @@ uint8_t Microphone::writeFile() {
             }
             for (uint32_t x = 0; x < bufferSize / stepSize; x++) {
                 buffer[x * stepSize] = drctBuffer[buffPos + x] + (reflBuffer[buffPos + x] * reflectorFactor);
-                if (buffer[x * stepSize] > 5) cout << "BUFF: " << buffer[x * stepSize] << '\t';
                 if (secondChanMic != nullptr) {
                     buffer[x * stepSize + 1] = secondChanMic->drctBuffer[buffPos + x] + (secondChanMic->reflBuffer[buffPos + x] * reflectorFactor);
                 }
@@ -567,6 +566,8 @@ class BinauralEngine {
                 uint32_t micSampleDist[MAX_MICROPHONES];
                 int16_t micCnt;
                 uint16_t flags = 0;
+                double startDelay = 0.0;
+                uint32_t startDelaySamples = 0;
                 double damper[MAX_MICROPHONES];
                 double damperStrength[MAX_MICROPHONES];
 
@@ -980,9 +981,15 @@ int8_t BinauralEngine::start() {
     for (i = 0; i < MAX_SPEAKERS; i++) {
         if(speakers[i] != nullptr) {
             cout << "Starting speaker #" << i << " returns " << (int16_t)speakers[i]->start() << endl;
-            if (speakers[i]->sampleCount > totalSamples) {
-                totalSamples = speakers[i]->sampleCount;
+
+            //When does the speaker start playing? Calculate the start sample.
+            speakers[i]->startDelaySamples = settings.sampleRate * speakers[i]->startDelay;
+
+            //Check if the total number of samples needs to be expanded.
+            if (speakers[i]->sampleCount + speakers[i]->startDelaySamples > totalSamples) {
+                totalSamples = speakers[i]->sampleCount + speakers[i]->startDelaySamples;
             }
+
             actualSpeakers = i;
 
             uint32_t sampleNrDiff;
@@ -1547,8 +1554,8 @@ void BinauralEngine::calcDirectStaticSpeakerSamples(SpeakerBE *speaker) {
             //    drctBuffer[(sampleNr + speakers[speakerNr]->micSampleDist[micNr])]
             //    += amp / speakers[speakerNr]->micDist[micNr];
             mics[speaker->micNr[micNr]]->
-                drctBuffer[(sampleNr + speaker->micSampleDist[micNr])]
-                += speaker->damper[micNr] / speaker->micDist[micNr];
+                drctBuffer[(speaker->startDelaySamples + sampleNr + speaker->micSampleDist[micNr])]
+                        += speaker->damper[micNr] / speaker->micDist[micNr];
         }
     }
 }
@@ -1611,9 +1618,9 @@ void BinauralEngine::calcDirectMovingSpeakerSamples(SpeakerBE *speaker) {
 
             damper[micNr] += (amp - damper[micNr]) / damperStrength[micNr];
 
-            mics[speaker->micNr[micNr]]->drctBuffer[(sampleNr + iMicSampleDist)] +=
+            mics[speaker->micNr[micNr]]->drctBuffer[(speaker->startDelaySamples + sampleNr + iMicSampleDist)] +=
                     (damper[micNr] / micDist) * (1.0 -rest);
-            mics[speaker->micNr[micNr]]->drctBuffer[(sampleNr + iMicSampleDist + 1)] +=
+            mics[speaker->micNr[micNr]]->drctBuffer[(speaker->startDelaySamples + sampleNr + iMicSampleDist + 1)] +=
                     (damper[micNr] / micDist) * (rest);
         }
     }
@@ -1704,7 +1711,7 @@ void BinauralEngine::calcReflStaticSpeakerSamples(SpeakerBE *speaker, Reflector 
                 refl[reflNr].tMics[micNr].damper += (speaker->samples[sampleNr]
                     - refl[reflNr].tMics[micNr].damper) / refl[reflNr].tMics[micNr].damperStrength;
 
-                mics[micNr]->reflBuffer[sampleNr + refl[reflNr].tMics[micNr].currMicSampleDist]
+                mics[micNr]->reflBuffer[speaker->startDelaySamples + sampleNr + refl[reflNr].tMics[micNr].currMicSampleDist]
                     += refl[reflNr].tMics[micNr].damper * refl[reflNr].tMics[micNr].finalFactor;
             }
         }
@@ -1779,14 +1786,16 @@ void BinauralEngine::calcReflMovingSpeakerSamples(SpeakerBE *speaker, Reflector 
             rest = dReflSampleDist - iReflSampleDist;
 
             for (micNr = 0; micNr < actualMicrophones; micNr++) {
-                refl[reflNr].tMics[micNr].damperStrength = 1.0 + (refl[reflNr].tMics[micNr].currMicDist + reflDist) / settings.airDamping;
+                refl[reflNr].tMics[micNr].damperStrength = (1.0 + (refl[reflNr].tMics[micNr].currMicDist + reflDist)
+                                                            / settings.airDamping) / refl[reflNr].totalReflAmount;
+
+                
                 refl[reflNr].tMics[micNr].damper +=  (speaker->samples[sampleNr] - refl[reflNr].tMics[micNr].damper) /
                         refl[reflNr].tMics[micNr].damperStrength;
 
-
-                mics[micNr]->reflBuffer[sampleNr + refl[reflNr].tMics[micNr].currMicSampleDist + iReflSampleDist] +=
+                mics[micNr]->reflBuffer[speaker->startDelaySamples + sampleNr + refl[reflNr].tMics[micNr].currMicSampleDist + iReflSampleDist] +=
                        refl[reflNr].tMics[micNr].damper / (refl[reflNr].tMics[micNr].currMicDist + reflDist) * (1.0 - rest);
-                mics[micNr]->reflBuffer[sampleNr + refl[reflNr].tMics[micNr].currMicSampleDist + iReflSampleDist + 1] +=
+                mics[micNr]->reflBuffer[speaker->startDelaySamples + sampleNr + refl[reflNr].tMics[micNr].currMicSampleDist + iReflSampleDist + 1] +=
                        refl[reflNr].tMics[micNr].damper / (refl[reflNr].tMics[micNr].currMicDist + reflDist) * rest;
 
             }
@@ -1915,7 +1924,9 @@ void configEngineByFile(BinauralEngine &binaural, string fileName) {
                                             atof(subVals[2 + versionSubValShift].c_str()),
                                             atof(subVals[3 + versionSubValShift].c_str()),
                                             atof(subVals[4 + versionSubValShift].c_str()));
-                    if (subVals[5 + versionSubValShift] != ""); //todo: start time
+                    if (subVals[5 + versionSubValShift] != "") {
+                        speaker->startDelay = atof(subVals[5 + versionSubValShift].c_str());
+                    }
 
                     if (subVals[6 + versionSubValShift] != "") {
                         binaural.addSpeakerKeyFramesByString(speaker, subVals[6 + versionSubValShift]);

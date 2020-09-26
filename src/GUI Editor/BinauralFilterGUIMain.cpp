@@ -58,6 +58,10 @@ BEGIN_EVENT_TABLE(BinauralFilterGUIFrame, wxFrame)
     EVT_SIZE(BinauralFilterGUIFrame::OnWindowResize)
     EVT_LISTBOX(11000, BinauralFilterGUIFrame::OnObjListClick)
 
+    EVT_BUTTON(10101, BinauralFilterGUIFrame::OnViewTopClick)
+    EVT_BUTTON(10102, BinauralFilterGUIFrame::OnViewFrontClick)
+    EVT_BUTTON(10103, BinauralFilterGUIFrame::OnViewSideClick)
+
     EVT_BUTTON(10001, BinauralFilterGUIFrame::OnAddSpeakerClick)
     EVT_BUTTON(10002, BinauralFilterGUIFrame::OnAddHeadClick)
     EVT_BUTTON(10003, BinauralFilterGUIFrame::OnAddMicrophoneClick)
@@ -109,9 +113,9 @@ BinauralFilterGUIFrame::BinauralFilterGUIFrame(wxFrame *frame, const wxString& t
     project->guiObjects[x].pos.setPoint(0, 0, 1.6);
 
     toolBar = this->CreateToolBar(wxTB_HORIZONTAL, wxID_ANY);
-    toolBarButtonTop = new wxButton(toolBar, wxID_ANY, "Top", wxDefaultPosition , wxSize(64, 32));
-    toolBarButtonFront = new wxButton(toolBar, wxID_ANY, "Front", wxDefaultPosition , wxSize(64, 32));
-    toolBarButtonSide = new wxButton(toolBar, wxID_ANY, "Side", wxDefaultPosition , wxSize(64, 32));
+    toolBarButtonTop = new wxButton(toolBar, 10101, "Top", wxDefaultPosition , wxSize(64, 32));
+    toolBarButtonFront = new wxButton(toolBar, 10102, "Front", wxDefaultPosition , wxSize(64, 32));
+    toolBarButtonSide = new wxButton(toolBar, 10103, "Side", wxDefaultPosition , wxSize(64, 32));
     toolBar->AddControl(new wxStaticText(toolBar, wxID_ANY, "View: "));
     toolBar->AddControl(toolBarButtonTop);
     toolBar->AddControl(toolBarButtonFront);
@@ -137,7 +141,7 @@ BinauralFilterGUIFrame::BinauralFilterGUIFrame(wxFrame *frame, const wxString& t
     toolBar->Realize();
     toolBar->Show();
 
-    viewPort = new ViewPort(this, wxPoint(5, 0), wxSize(825, 505));
+    viewPort = new ViewPort(this, wxPoint(10, 5), wxSize(820, 500));
     viewPort->setProject(project);
     viewPort->setZoom(3);
     viewPort->setCenterOfView(c3DPoint(0, -1, 1.6));
@@ -235,6 +239,12 @@ void BinauralFilterGUIFrame::OnWindowResize(wxSizeEvent &event) {
 }
 
 void BinauralFilterGUIFrame::OnAddSpeakerClick(wxCommandEvent &event) {
+#ifdef __WXMSW__
+    //This should fix a bug in wxWidgets Windows where Events are called twice
+    static int bugTwiceCallFixer = 0;
+    if (++bugTwiceCallFixer == 0) return;
+#endif
+
     int x = project->addSpeaker();
     if (x >= 0) {
         project->guiObjects[x].pos = viewPort->getCenterOfView();
@@ -245,6 +255,12 @@ void BinauralFilterGUIFrame::OnAddSpeakerClick(wxCommandEvent &event) {
 }
 
 void BinauralFilterGUIFrame::OnAddHeadClick(wxCommandEvent &event) {
+#ifdef __WXMSW__
+    //This should fix a bug in wxWidgets Windows where Events are called twice
+    static int bugTwiceCallFixer = 0;
+    if (++bugTwiceCallFixer == 0) return;
+#endif
+
     static double angle = 0;
     int x = project->addHead();
     if (x >= 0) {
@@ -257,6 +273,12 @@ void BinauralFilterGUIFrame::OnAddHeadClick(wxCommandEvent &event) {
 }
 
 void BinauralFilterGUIFrame::OnAddMicrophoneClick(wxCommandEvent &event){
+#ifdef __WXMSW__
+    //This should fix a bug in wxWidgets Windows where Events are called twice
+    static int bugTwiceCallFixer = 0;
+    if (++bugTwiceCallFixer == 0) return;
+#endif
+
     int x = project->addMicrophone();
     if (x >= 0) {
         project->guiObjects[x].pos = viewPort->getCenterOfView();
@@ -268,6 +290,12 @@ void BinauralFilterGUIFrame::OnAddMicrophoneClick(wxCommandEvent &event){
 
 
 void BinauralFilterGUIFrame::OnAddRndSpeakerClick(wxCommandEvent &event){
+#ifdef __WXMSW__
+    //This should fix a bug in wxWidgets Windows where Events are called twice
+    static int bugTwiceCallFixer = 0;
+    if (++bugTwiceCallFixer == 0) return;
+#endif
+
     int x = project->addRndSpeaker();
     c3DPoint pos2;
     if (x >= 0) {
@@ -284,6 +312,12 @@ void BinauralFilterGUIFrame::OnAddRndSpeakerClick(wxCommandEvent &event){
 }
 
 void BinauralFilterGUIFrame::OnAddRoomClick(wxCommandEvent &event) {
+#ifdef __WXMSW__
+    //This should fix a bug in wxWidgets Windows where Events are called twice
+    static int bugTwiceCallFixer = 0;
+    if (++bugTwiceCallFixer == 0) return;
+#endif
+
     int x;
     c3DPoint pos1, pos2;
     pos1.x = viewPort->getCenterOfView().x - 1.5;
@@ -343,6 +377,12 @@ void BinauralFilterGUIFrame::OnAddRoomClick(wxCommandEvent &event) {
 }
 
 void BinauralFilterGUIFrame::OnAddWallClick(wxCommandEvent &event) {
+#ifdef __WXMSW__
+    //This should fix a bug in wxWidgets Windows where Events are called twice
+    static int bugTwiceCallFixer = 0;
+    if (++bugTwiceCallFixer == 0) return;
+#endif
+
     c3DPoint pos2;
     int x = project->addWall();
 
@@ -439,6 +479,11 @@ void BinauralFilterGUIFrame::OnTimer(wxTimerEvent &evt) {
                 project->tempEvent.lastName = "";
                 viewPort->Refresh();
                 break;
+
+            case TempEvents::EVT_WM_CHANGED:
+                viewPort->Refresh();
+                propEdit->updateObject();
+                break;
         }
 
         project->tempEvent.lastEvent = TempEvents::EVT_NO_EVENT;
@@ -450,4 +495,14 @@ void BinauralFilterGUIFrame::OnMenuSceneSettings(wxCommandEvent &event) {
     RenderSettingsFrame *window = new RenderSettingsFrame(0L, _("Scene Settings"), project);
 
     window->Show();
+}
+
+void BinauralFilterGUIFrame::OnViewTopClick(wxCommandEvent &event) {
+    viewPort->setView(ViewPort::VIEW_TOP);
+}
+void BinauralFilterGUIFrame::OnViewFrontClick(wxCommandEvent &event) {
+    viewPort->setView(ViewPort::VIEW_FRONT);
+}
+void BinauralFilterGUIFrame::OnViewSideClick(wxCommandEvent &event) {
+    viewPort->setView(ViewPort::VIEW_SIDE);
 }

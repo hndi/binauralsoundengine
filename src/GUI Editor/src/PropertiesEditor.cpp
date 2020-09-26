@@ -12,6 +12,8 @@ wxBEGIN_EVENT_TABLE(PropertiesEditor, wxVScrolledWindow)
     EVT_TEXT(PropertiesEditor::startId + PropertiesEditor::PROP_SPEAK_VOLUME, PropertiesEditor::OnEditText)
     EVT_TEXT(PropertiesEditor::startId + PropertiesEditor::PROP_SPEAK_FLAGS, PropertiesEditor::OnEditText)
     EVT_TEXT(PropertiesEditor::startId + PropertiesEditor::PROP_SPEAK_KEYFRAMES, PropertiesEditor::OnEditText)
+    EVT_TEXT(PropertiesEditor::startId + PropertiesEditor::PROP_SPEAK_DELAY, PropertiesEditor::OnEditText)
+
 
     EVT_TEXT(PropertiesEditor::startId + PropertiesEditor::PROP_RNDSPKR_FILE, PropertiesEditor::OnEditText)
     EVT_TEXT(PropertiesEditor::startId + PropertiesEditor::PROP_RNDSPKR_POS1X, PropertiesEditor::OnEditText)
@@ -57,6 +59,8 @@ wxBEGIN_EVENT_TABLE(PropertiesEditor, wxVScrolledWindow)
     EVT_BUTTON(PropertiesEditor::startId + PropertiesEditor::PROP_RNDSPKR_FILE, PropertiesEditor::OnPropButton)
     EVT_BUTTON(PropertiesEditor::startId + PropertiesEditor::PROP_MIC_FILE, PropertiesEditor::OnPropButton)
     EVT_BUTTON(PropertiesEditor::startId + PropertiesEditor::PROP_3DH_FILE, PropertiesEditor::OnPropButton)
+    EVT_BUTTON(PropertiesEditor::startId + PropertiesEditor::PROP_WALL_MOD, PropertiesEditor::OnPropButton)
+
 wxEND_EVENT_TABLE()
 
 PropertiesEditor::PropertiesEditor(wxWindow *parent, wxWindowID id, const wxPoint &pos,
@@ -112,6 +116,9 @@ void PropertiesEditor::createObjects() {
     editProp[PROP_SPEAK_KEYFRAMES] = new wxTextCtrl(this, startId + PROP_SPEAK_KEYFRAMES, wxEmptyString, wxPoint(0, height * 11), wxSize(width, height));
     txtProp[PROP_SPEAK_FLAGS] = new wxStaticText(this, wxID_ANY, "Flags:", wxPoint(0, height * 12), wxSize(width, height));
     editProp[PROP_SPEAK_FLAGS] = new wxTextCtrl(this, startId + PROP_SPEAK_FLAGS, wxEmptyString, wxPoint(0, height * 13), wxSize(width, height));
+    txtProp[PROP_SPEAK_DELAY] = new wxStaticText(this, wxID_ANY, "Start Delay (s):", wxPoint(0, height * 14), wxSize(width, height));
+    editProp[PROP_SPEAK_DELAY] = new wxTextCtrl(this, startId + PROP_SPEAK_DELAY, wxEmptyString, wxPoint(0, height * 15), wxSize(width, height));
+
 
     /* 3D Head */
     txtProp[PROP_3DH_FILE] = new wxStaticText(this, wxID_ANY, "Output File:", wxPoint(0, height * 4), wxSize(width, height));
@@ -149,16 +156,16 @@ void PropertiesEditor::createObjects() {
     editProp[PROP_RNDSPKR_POS2Z] = new wxTextCtrl(this, startId + PROP_RNDSPKR_POS2Z, wxEmptyString, wxPoint(2 * width / 3, height * 9), wxSize(width / 3, height));
     txtProp[PROP_RNDSPKR_VOLUME] = new wxStaticText(this, wxID_ANY, "Volume:", wxPoint(0, height * 10), wxSize(width, height));
     editProp[PROP_RNDSPKR_VOLUME] = new wxTextCtrl(this, startId + PROP_RNDSPKR_VOLUME, wxEmptyString, wxPoint(0, height * 11), wxSize(width, height));
-    txtProp[PROP_RNDSPKR_TTIME] = new wxStaticText(this, wxID_ANY, "Total play time:", wxPoint(0, height * 10), wxSize(width, height));
-    editProp[PROP_RNDSPKR_TTIME] = new wxTextCtrl(this, startId + PROP_RNDSPKR_TTIME, wxEmptyString, wxPoint(0, height * 11), wxSize(width, height));
-    txtProp[PROP_RNDSPKR_MINP] = new wxStaticText(this, wxID_ANY, "Min pause, max pause:", wxPoint(0, height * 12), wxSize(width, height));
-    editProp[PROP_RNDSPKR_MINP] = new wxTextCtrl(this, startId + PROP_RNDSPKR_MINP, wxEmptyString, wxPoint(0, height * 13), wxSize(width / 2, height));
-    editProp[PROP_RNDSPKR_MAXP] = new wxTextCtrl(this, startId + PROP_RNDSPKR_MAXP, wxEmptyString, wxPoint(width / 2, height * 13), wxSize(width / 2, height));
-    txtProp[PROP_RNDSPKR_MINS] = new wxStaticText(this, wxID_ANY, "Min speed, max speed:", wxPoint(0, height * 14), wxSize(width, height));
-    editProp[PROP_RNDSPKR_MINS] = new wxTextCtrl(this, startId + PROP_RNDSPKR_MINS, wxEmptyString, wxPoint(0, height * 15), wxSize(width / 2, height));
-    editProp[PROP_RNDSPKR_MAXS] = new wxTextCtrl(this, startId + PROP_RNDSPKR_MAXS, wxEmptyString, wxPoint(width / 2, height * 15), wxSize(width / 2, height));
-    txtProp[PROP_RNDSPKR_FLAGS] = new wxStaticText(this, wxID_ANY, "Flags:", wxPoint(0, height * 16), wxSize(width, height));
-    editProp[PROP_RNDSPKR_FLAGS] = new wxTextCtrl(this, startId + PROP_RNDSPKR_FLAGS, wxEmptyString, wxPoint(0, height * 17), wxSize(width, height));
+    txtProp[PROP_RNDSPKR_TTIME] = new wxStaticText(this, wxID_ANY, "Total play time:", wxPoint(0, height * 12), wxSize(width, height));
+    editProp[PROP_RNDSPKR_TTIME] = new wxTextCtrl(this, startId + PROP_RNDSPKR_TTIME, wxEmptyString, wxPoint(0, height * 13), wxSize(width, height));
+    txtProp[PROP_RNDSPKR_MINP] = new wxStaticText(this, wxID_ANY, "Min pause, max pause:", wxPoint(0, height * 14), wxSize(width, height));
+    editProp[PROP_RNDSPKR_MINP] = new wxTextCtrl(this, startId + PROP_RNDSPKR_MINP, wxEmptyString, wxPoint(0, height * 15), wxSize(width / 2, height));
+    editProp[PROP_RNDSPKR_MAXP] = new wxTextCtrl(this, startId + PROP_RNDSPKR_MAXP, wxEmptyString, wxPoint(width / 2, height * 15), wxSize(width / 2, height));
+    txtProp[PROP_RNDSPKR_MINS] = new wxStaticText(this, wxID_ANY, "Min speed, max speed:", wxPoint(0, height * 16), wxSize(width, height));
+    editProp[PROP_RNDSPKR_MINS] = new wxTextCtrl(this, startId + PROP_RNDSPKR_MINS, wxEmptyString, wxPoint(0, height * 17), wxSize(width / 2, height));
+    editProp[PROP_RNDSPKR_MAXS] = new wxTextCtrl(this, startId + PROP_RNDSPKR_MAXS, wxEmptyString, wxPoint(width / 2, height * 17), wxSize(width / 2, height));
+    txtProp[PROP_RNDSPKR_FLAGS] = new wxStaticText(this, wxID_ANY, "Flags:", wxPoint(0, height * 18), wxSize(width, height));
+    editProp[PROP_RNDSPKR_FLAGS] = new wxTextCtrl(this, startId + PROP_RNDSPKR_FLAGS, wxEmptyString, wxPoint(0, height * 19), wxSize(width, height));
 
     /*wall */
     txtProp[PROP_WALL_AMOUNT] = new wxStaticText(this, wxID_ANY, "Reflection amount:", wxPoint(0, height * 4), wxSize(width, height));
@@ -227,7 +234,10 @@ void PropertiesEditor::showProperties() {
                 editProp[PROP_SPEAK_KEYFRAMES]->Show();
                 txtProp[PROP_SPEAK_FLAGS]->Show();
                 editProp[PROP_SPEAK_FLAGS]->Show();
-                this->SetRowCount(height * 14 / 4);
+                txtProp[PROP_SPEAK_DELAY]->Show();
+                editProp[PROP_SPEAK_DELAY]->Show();
+
+                this->SetRowCount(height * 16 / 4);
                 break;
 
             case BinauralProject::OBJ_HEAD:
@@ -284,7 +294,9 @@ void PropertiesEditor::showProperties() {
                 editProp[PROP_RNDSPKR_MAXS]->Show();
                 txtProp[PROP_RNDSPKR_FLAGS]->Show();
                 editProp[PROP_RNDSPKR_FLAGS]->Show();
-                this->SetRowCount(height * 19 / 4);
+                txtProp[PROP_RNDSPKR_TTIME]->Show();
+                editProp[PROP_RNDSPKR_TTIME]->Show();
+                this->SetRowCount(height * 20 / 4);
                 break;
 
             case BinauralProject::OBJ_WALL:
@@ -319,54 +331,57 @@ void PropertiesEditor::fillProperties() {
         switch (myProject->guiObjects[currentObject].objType) {
             case BinauralProject::OBJ_SPEAKER:
                 editProp[PROP_SPEAK_FILE]->SetValue(myProject->guiObjects[currentObject].file);
-                editProp[PROP_SPEAK_POS1X]->SetValue(wxString::Format(wxT("%f"), myProject->guiObjects[currentObject].pos.x));
-                editProp[PROP_SPEAK_POS1Y]->SetValue(wxString::Format(wxT("%f"), myProject->guiObjects[currentObject].pos.y));
-                editProp[PROP_SPEAK_POS1Z]->SetValue(wxString::Format(wxT("%f"), myProject->guiObjects[currentObject].pos.z));
-                editProp[PROP_SPEAK_VOLUME]->SetValue(wxString::Format(wxT("%f"), myProject->guiObjects[currentObject].volume));
+                editProp[PROP_SPEAK_POS1X]->SetValue(fToStr( myProject->guiObjects[currentObject].pos.x));
+                editProp[PROP_SPEAK_POS1Y]->SetValue(fToStr( myProject->guiObjects[currentObject].pos.y));
+                editProp[PROP_SPEAK_POS1Z]->SetValue(fToStr( myProject->guiObjects[currentObject].pos.z));
+                editProp[PROP_SPEAK_VOLUME]->SetValue(fToStr( myProject->guiObjects[currentObject].volume));
                 editProp[PROP_SPEAK_KEYFRAMES]->SetValue(myProject->guiObjects[currentObject].keyFrames);
                 editProp[PROP_SPEAK_FLAGS]->SetValue(wxString::Format(wxT("%i"), myProject->guiObjects[currentObject].flags));
+                editProp[PROP_SPEAK_DELAY]->SetValue(fToStr( myProject->guiObjects[currentObject].startDelay));
                 break;
 
             case BinauralProject::OBJ_HEAD:
                 editProp[PROP_3DH_FILE]->SetValue(myProject->guiObjects[currentObject].file);
-                editProp[PROP_3DH_POS1X]->SetValue(wxString::Format(wxT("%f"), myProject->guiObjects[currentObject].pos.x));
-                editProp[PROP_3DH_POS1Y]->SetValue(wxString::Format(wxT("%f"), myProject->guiObjects[currentObject].pos.y));
-                editProp[PROP_3DH_POS1Z]->SetValue(wxString::Format(wxT("%f"), myProject->guiObjects[currentObject].pos.z));
-                editProp[PROP_3DH_ANGLE]->SetValue(wxString::Format(wxT("%f"), myProject->guiObjects[currentObject].angle));
-                editProp[PROP_3DH_DIST]->SetValue(wxString::Format(wxT("%f"), myProject->guiObjects[currentObject].earDistance));
+                editProp[PROP_3DH_POS1X]->SetValue(fToStr( myProject->guiObjects[currentObject].pos.x));
+                editProp[PROP_3DH_POS1Y]->SetValue(fToStr( myProject->guiObjects[currentObject].pos.y));
+                editProp[PROP_3DH_POS1Z]->SetValue(fToStr( myProject->guiObjects[currentObject].pos.z));
+                editProp[PROP_3DH_ANGLE]->SetValue(fToStr( myProject->guiObjects[currentObject].angle));
+                editProp[PROP_3DH_DIST]->SetValue(fToStr( myProject->guiObjects[currentObject].earDistance));
                 break;
 
             case BinauralProject::OBJ_MICROPHONE:
                 editProp[PROP_MIC_FILE]->SetValue(myProject->guiObjects[currentObject].file);
-                editProp[PROP_MIC_POS1X]->SetValue(wxString::Format(wxT("%f"), myProject->guiObjects[currentObject].pos.x));
-                editProp[PROP_MIC_POS1Y]->SetValue(wxString::Format(wxT("%f"), myProject->guiObjects[currentObject].pos.y));
-                editProp[PROP_MIC_POS1Z]->SetValue(wxString::Format(wxT("%f"), myProject->guiObjects[currentObject].pos.z));
+                editProp[PROP_MIC_POS1X]->SetValue(fToStr( myProject->guiObjects[currentObject].pos.x));
+                editProp[PROP_MIC_POS1Y]->SetValue(fToStr( myProject->guiObjects[currentObject].pos.y));
+                editProp[PROP_MIC_POS1Z]->SetValue(fToStr( myProject->guiObjects[currentObject].pos.z));
                 break;
 
             case BinauralProject::OBJ_RND_SPEAKER:
                 editProp[PROP_RNDSPKR_FILE]->SetValue(myProject->guiObjects[currentObject].file);
-                editProp[PROP_RNDSPKR_POS1X]->SetValue(wxString::Format(wxT("%f"), myProject->guiObjects[currentObject].pos.x));
-                editProp[PROP_RNDSPKR_POS1Y]->SetValue(wxString::Format(wxT("%f"), myProject->guiObjects[currentObject].pos.y));
-                editProp[PROP_RNDSPKR_POS1Z]->SetValue(wxString::Format(wxT("%f"), myProject->guiObjects[currentObject].pos.z));
-                editProp[PROP_RNDSPKR_POS2X]->SetValue(wxString::Format(wxT("%f"), myProject->guiObjects[currentObject].pos2.x));
-                editProp[PROP_RNDSPKR_POS2Y]->SetValue(wxString::Format(wxT("%f"), myProject->guiObjects[currentObject].pos2.y));
-                editProp[PROP_RNDSPKR_POS2Z]->SetValue(wxString::Format(wxT("%f"), myProject->guiObjects[currentObject].pos2.z));
-                editProp[PROP_RNDSPKR_MINP]->SetValue(wxString::Format(wxT("%f"), myProject->guiObjects[currentObject].minPause));
-                editProp[PROP_RNDSPKR_MAXP]->SetValue(wxString::Format(wxT("%f"), myProject->guiObjects[currentObject].maxPause));
-                editProp[PROP_RNDSPKR_MINS]->SetValue(wxString::Format(wxT("%f"), myProject->guiObjects[currentObject].minSpeed));
-                editProp[PROP_RNDSPKR_MAXS]->SetValue(wxString::Format(wxT("%f"), myProject->guiObjects[currentObject].maxSpeed));
-                editProp[PROP_RNDSPKR_VOLUME]->SetValue(wxString::Format(wxT("%f"), myProject->guiObjects[currentObject].volume));
+                editProp[PROP_RNDSPKR_POS1X]->SetValue(fToStr( myProject->guiObjects[currentObject].pos.x));
+                editProp[PROP_RNDSPKR_POS1Y]->SetValue(fToStr( myProject->guiObjects[currentObject].pos.y));
+                editProp[PROP_RNDSPKR_POS1Z]->SetValue(fToStr( myProject->guiObjects[currentObject].pos.z));
+                editProp[PROP_RNDSPKR_POS2X]->SetValue(fToStr( myProject->guiObjects[currentObject].pos2.x));
+                editProp[PROP_RNDSPKR_POS2Y]->SetValue(fToStr( myProject->guiObjects[currentObject].pos2.y));
+                editProp[PROP_RNDSPKR_POS2Z]->SetValue(fToStr( myProject->guiObjects[currentObject].pos2.z));
+                editProp[PROP_RNDSPKR_MINP]->SetValue(fToStr( myProject->guiObjects[currentObject].minPause));
+                editProp[PROP_RNDSPKR_MAXP]->SetValue(fToStr( myProject->guiObjects[currentObject].maxPause));
+                editProp[PROP_RNDSPKR_MINS]->SetValue(fToStr( myProject->guiObjects[currentObject].minSpeed));
+                editProp[PROP_RNDSPKR_MAXS]->SetValue(fToStr( myProject->guiObjects[currentObject].maxSpeed));
+                editProp[PROP_RNDSPKR_VOLUME]->SetValue(fToStr( myProject->guiObjects[currentObject].volume));
                 editProp[PROP_RNDSPKR_FLAGS]->SetValue(wxString::Format(wxT("%i"), myProject->guiObjects[currentObject].flags));
+                editProp[PROP_RNDSPKR_TTIME]->SetValue(fToStr( myProject->guiObjects[currentObject].totalTime));
+
                 break;
 
             case BinauralProject::OBJ_WALL:
-                editProp[PROP_WALL_AMOUNT]->SetValue(wxString::Format(wxT("%f"), myProject->guiObjects[currentObject].amount));
-                editProp[PROP_WALL_POS1X]->SetValue(wxString::Format(wxT("%f"), myProject->guiObjects[currentObject].pos.x));
-                editProp[PROP_WALL_POS1Y]->SetValue(wxString::Format(wxT("%f"), myProject->guiObjects[currentObject].pos.y));
-                editProp[PROP_WALL_POS1Z]->SetValue(wxString::Format(wxT("%f"), myProject->guiObjects[currentObject].pos.z));
-                editProp[PROP_WALL_POS2X]->SetValue(wxString::Format(wxT("%f"), myProject->guiObjects[currentObject].pos2.x));
-                editProp[PROP_WALL_POS2Y]->SetValue(wxString::Format(wxT("%f"), myProject->guiObjects[currentObject].pos2.y));
-                editProp[PROP_WALL_POS2Z]->SetValue(wxString::Format(wxT("%f"), myProject->guiObjects[currentObject].pos2.z));
+                editProp[PROP_WALL_AMOUNT]->SetValue(fToStr( myProject->guiObjects[currentObject].amount));
+                editProp[PROP_WALL_POS1X]->SetValue(fToStr( myProject->guiObjects[currentObject].pos.x));
+                editProp[PROP_WALL_POS1Y]->SetValue(fToStr( myProject->guiObjects[currentObject].pos.y));
+                editProp[PROP_WALL_POS1Z]->SetValue(fToStr( myProject->guiObjects[currentObject].pos.z));
+                editProp[PROP_WALL_POS2X]->SetValue(fToStr( myProject->guiObjects[currentObject].pos2.x));
+                editProp[PROP_WALL_POS2Y]->SetValue(fToStr( myProject->guiObjects[currentObject].pos2.y));
+                editProp[PROP_WALL_POS2Z]->SetValue(fToStr( myProject->guiObjects[currentObject].pos2.z));
                 editProp[PROP_WALL_GROUP]->SetValue(myProject->guiObjects[currentObject].wallGroup);
                 editProp[PROP_WALL_MOD]->SetValue(myProject->guiObjects[currentObject].modifier);
                 break;
@@ -417,6 +432,9 @@ void PropertiesEditor::OnEditText(wxCommandEvent &evt) {
                 break;
             case PROP_SPEAK_KEYFRAMES:
                 myProject->guiObjects[currentObject].keyFrames= editProp[PROP_SPEAK_KEYFRAMES]->GetValue();
+                break;
+            case PROP_SPEAK_DELAY:
+                myProject->guiObjects[currentObject].startDelay= atof(editProp[PROP_SPEAK_DELAY]->GetValue());
                 break;
 
             case PROP_3DH_FILE:
@@ -661,6 +679,11 @@ void PropertiesEditor::OnPropButton(wxCommandEvent &evt) {
                     }
                     break;
                 }
+
+            case PROP_WALL_MOD:
+                WallModEditorFrame *window = new WallModEditorFrame(0L, _("Wall Modifier"), myProject, currentObject);
+                window->Show();
+                break;
         }
     }
 }

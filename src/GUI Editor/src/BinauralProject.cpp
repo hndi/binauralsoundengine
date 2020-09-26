@@ -80,6 +80,7 @@ bool BinauralProject::loadFromFile(wxString fileName) {
                         guiObjects[objNr].pos.y = atof(subVals[2 + versionSubValShift].c_str());
                         guiObjects[objNr].pos.z = atof(subVals[3 + versionSubValShift].c_str());
                         guiObjects[objNr].volume = atof(subVals[4 + versionSubValShift].c_str());
+                        guiObjects[objNr].startDelay = atof(subVals[5 + versionSubValShift].c_str());
                         guiObjects[objNr].keyFrames = subVals[6 + versionSubValShift];
                         guiObjects[objNr].flags = atoi(subVals[7 + versionSubValShift].c_str());
                     }
@@ -225,16 +226,17 @@ bool BinauralProject::saveToFile(wxString fileName) {
     wxFile file(fileName, wxFile::write);
 
     if (file.IsOpened()) {
-        file.Write("version=" + wxString::Format(wxT("%f"), version) + '\n');
+        file.Write("version=" + fToStr(version) + '\n');
         for (int i = 0; i < MAX_OBJECTS; i++) {
             switch(guiObjects[i].objType) {
             case OBJ_SPEAKER:
                 str = "speaker=" + guiObjects[i].name + ";" +
                       guiObjects[i].file + ";" +
-                      wxString::Format(wxT("%f"), guiObjects[i].pos.x) + ";" +
-                      wxString::Format(wxT("%f"), guiObjects[i].pos.y) + ";" +
-                      wxString::Format(wxT("%f"), guiObjects[i].pos.z) + ";" +
-                      wxString::Format(wxT("%f"), guiObjects[i].volume) + ";;" +
+                      fToStr(guiObjects[i].pos.x) + ";" +
+                      fToStr(guiObjects[i].pos.y) + ";" +
+                      fToStr(guiObjects[i].pos.z) + ";" +
+                      fToStr(guiObjects[i].volume) + ";" +
+                      fToStr(guiObjects[i].startDelay) + ";" +
                       guiObjects[i].keyFrames + ";" +
                       wxString::Format(wxT("%i"), guiObjects[i].flags);
                       file.Write(str + '\n');
@@ -242,48 +244,48 @@ bool BinauralProject::saveToFile(wxString fileName) {
             case OBJ_HEAD:
                 str = "head=" + guiObjects[i].name + ";" +
                       guiObjects[i].file + ";" +
-                      wxString::Format(wxT("%f"), guiObjects[i].pos.x) + ";" +
-                      wxString::Format(wxT("%f"), guiObjects[i].pos.y) + ";" +
-                      wxString::Format(wxT("%f"), guiObjects[i].pos.z) + ";" +
-                      wxString::Format(wxT("%f"), guiObjects[i].angle) + ";" +
-                      wxString::Format(wxT("%f"), guiObjects[i].earDistance);
+                      fToStr(guiObjects[i].pos.x) + ";" +
+                      fToStr(guiObjects[i].pos.y) + ";" +
+                      fToStr(guiObjects[i].pos.z) + ";" +
+                      fToStr(guiObjects[i].angle) + ";" +
+                      fToStr(guiObjects[i].earDistance);
                 file.Write(str + '\n');
                 break;
             case OBJ_MICROPHONE:
                 str = "microphone=" + guiObjects[i].name + ";" +
                       guiObjects[i].file + ";" +
-                      wxString::Format(wxT("%f"), guiObjects[i].pos.x) + ";" +
-                      wxString::Format(wxT("%f"), guiObjects[i].pos.y) + ";" +
-                      wxString::Format(wxT("%f"), guiObjects[i].pos.z);
+                      fToStr(guiObjects[i].pos.x) + ";" +
+                      fToStr(guiObjects[i].pos.y) + ";" +
+                      fToStr(guiObjects[i].pos.z);
                 file.Write(str + '\n');
                 break;
             case OBJ_RND_SPEAKER:
                  str = "rndspawnspeaker=" + guiObjects[i].name + ";" +
                       guiObjects[i].file + ";" +
-                      wxString::Format(wxT("%f"), guiObjects[i].pos.x) + ";" +
-                      wxString::Format(wxT("%f"), guiObjects[i].pos.y) + ";" +
-                      wxString::Format(wxT("%f"), guiObjects[i].pos.z) + ";" +
-                      wxString::Format(wxT("%f"), guiObjects[i].pos2.x) + ";" +
-                      wxString::Format(wxT("%f"), guiObjects[i].pos2.y) + ";" +
-                      wxString::Format(wxT("%f"), guiObjects[i].pos2.z) + ";" +
-                      wxString::Format(wxT("%f"), guiObjects[i].volume) + ";" +
-                      wxString::Format(wxT("%f"), guiObjects[i].totalTime) + ";" +
-                      wxString::Format(wxT("%f"), guiObjects[i].minPause) + ";" +
-                      wxString::Format(wxT("%f"), guiObjects[i].maxPause) + ";" +
-                      wxString::Format(wxT("%f"), guiObjects[i].minSpeed) + ";" +
-                      wxString::Format(wxT("%f"), guiObjects[i].maxSpeed) + ";" +
+                      fToStr(guiObjects[i].pos.x) + ";" +
+                      fToStr(guiObjects[i].pos.y) + ";" +
+                      fToStr(guiObjects[i].pos.z) + ";" +
+                      fToStr(guiObjects[i].pos2.x) + ";" +
+                      fToStr(guiObjects[i].pos2.y) + ";" +
+                      fToStr(guiObjects[i].pos2.z) + ";" +
+                      fToStr(guiObjects[i].volume) + ";" +
+                      fToStr(guiObjects[i].totalTime) + ";" +
+                      fToStr(guiObjects[i].minPause) + ";" +
+                      fToStr(guiObjects[i].maxPause) + ";" +
+                      fToStr(guiObjects[i].minSpeed) + ";" +
+                      fToStr(guiObjects[i].maxSpeed) + ";" +
                       wxString::Format(wxT("%i"), guiObjects[i].flags);;
                 file.Write(str + '\n');
                 break;
             case OBJ_WALL:
                  str = "wall=" + guiObjects[i].name + ";" +
-                      wxString::Format(wxT("%f"), guiObjects[i].pos.x) + ";" +
-                      wxString::Format(wxT("%f"), guiObjects[i].pos.y) + ";" +
-                      wxString::Format(wxT("%f"), guiObjects[i].pos.z) + ";" +
-                      wxString::Format(wxT("%f"), guiObjects[i].pos2.x) + ";" +
-                      wxString::Format(wxT("%f"), guiObjects[i].pos2.y) + ";" +
-                      wxString::Format(wxT("%f"), guiObjects[i].pos2.z) + ";" +
-                      wxString::Format(wxT("%f"), guiObjects[i].amount) + ";" +
+                      fToStr(guiObjects[i].pos.x) + ";" +
+                      fToStr(guiObjects[i].pos.y) + ";" +
+                      fToStr(guiObjects[i].pos.z) + ";" +
+                      fToStr(guiObjects[i].pos2.x) + ";" +
+                      fToStr(guiObjects[i].pos2.y) + ";" +
+                      fToStr(guiObjects[i].pos2.z) + ";" +
+                      fToStr(guiObjects[i].amount) + ";" +
                       guiObjects[i].modifier + ";" +
                       guiObjects[i].wallGroup;
                 file.Write(str + '\n');
@@ -291,11 +293,11 @@ bool BinauralProject::saveToFile(wxString fileName) {
             }
         }
         file.Write("samplerate=" + wxString::Format(wxT("%i"), settings.sampleRate) + '\n');
-        file.Write("additionaltime=" + wxString::Format(wxT("%f"), settings.additionalTime) + '\n');
+        file.Write("additionaltime=" + fToStr(settings.additionalTime) + '\n');
         file.Write("nrbounces=" + wxString::Format(wxT("%i"), settings.nrBounces) + '\n');
         file.Write("nrreflections=" + wxString::Format(wxT("%i"), settings.maxReflectionPasses) + '\n');
         file.Write("randomseed=" + wxString::Format(wxT("%i"), settings.randomSeed) + '\n');
-        file.Write("airdamping=" + wxString::Format(wxT("%f"), settings.airDamping) + '\n');
+        file.Write("airdamping=" + fToStr(settings.airDamping) + '\n');
         file.Write("saveeverynrofpasses=" + wxString::Format(wxT("%i"), settings.saveMicsEveryNrOfPasses) + '\n');
         file.Close();
         return true;

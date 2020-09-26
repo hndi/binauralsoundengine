@@ -5,6 +5,7 @@
     #include <wx/wx.h>
 #endif
 #include "BinauralProject.h"
+#include "guihelpers.h"
 
 
 class RenderSettingsFrame : public wxFrame

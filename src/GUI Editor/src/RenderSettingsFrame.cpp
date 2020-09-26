@@ -26,7 +26,7 @@ RenderSettingsFrame::RenderSettingsFrame(wxFrame *frame, const wxString& title, 
 
     txtDescr[1]->SetLabel("Additional time (seconds):");
     txtHelp[1]->SetLabel("Adds additional time to the output files for reverb and sound delay.\nLarge rooms/distances need higher times. Default: 30s.");
-    editValue[1]->SetValue(wxString::Format(wxT("%f"), myProject->settings.additionalTime));
+    editValue[1]->SetValue(fToStr(myProject->settings.additionalTime));
 
     txtDescr[2]->SetLabel("Number of reflection bounces:");
     txtHelp[2]->SetLabel("The number times a reflection bounces off walls. Small rooms need\na higher number. Default: 50");
@@ -46,7 +46,7 @@ RenderSettingsFrame::RenderSettingsFrame(wxFrame *frame, const wxString& title, 
 
     txtDescr[6]->SetLabel("Air damping:");
     txtHelp[6]->SetLabel("Higher numbers will reduce high frequencies stronger over\nlonger distances. Default is 100.");
-    editValue[6]->SetValue(wxString::Format(wxT("%f"), myProject->settings.airDamping));
+    editValue[6]->SetValue(fToStr(myProject->settings.airDamping));
 
 }
 

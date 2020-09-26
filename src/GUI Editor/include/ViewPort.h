@@ -20,6 +20,7 @@ class ViewPort : public wxWindow
         void setCenterOfView(c3DPoint pos);
         c3DPoint getCenterOfView();
         void setZoom(double distance);
+        void setView(int newView);
         void setProject(BinauralProject *project);
         void renderObjects(wxDC &dc, wxPen &pen, wxBrush &brush);
         void RenderWallModifier(wxDC &dc, wxPen &pen, wxBrush &wxBrush, int objNr);
@@ -45,9 +46,9 @@ class ViewPort : public wxWindow
         static const int DRAG_AXIS_ONLY_X = 1;
         static const int DRAG_AXIS_ONLY_Y = 2;
 
-        wxColour vpClrBackground    = wxColour(64, 64, 64);
-        wxColour vpClrGrid10        = wxColour(75, 75, 75);
-        wxColour vpClrGrid1         = wxColour(68, 68, 68);
+        wxColour vpClrBackground    = wxColour(95, 95, 95);
+        wxColour vpClrGrid10        = wxColour(106, 106, 106);
+        wxColour vpClrGrid1         = wxColour(100, 100, 100);
         wxColour vpClrXAxis         = wxColour(160, 48, 48);
         wxColour vpClrYAxis         = wxColour(48, 160, 48);
         wxColour vpClrZAxis         = wxColour(48, 48, 160);

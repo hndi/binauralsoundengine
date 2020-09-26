@@ -4,14 +4,19 @@
 #include <wx/wx.h>
 #include <3DPoint.h>
 #include <wx/textfile.h>
+#include "guihelpers.h"
 
 class TempEvents {
     public:
         static const int EVT_NO_EVENT = 0;
+
         static const int EVT_VP_SELECTION = 1;
         static const int EVT_VP_MOVED = 2;
+
         static const int EVT_PE_RENAME = 10;
         static const int EVT_PE_PROP_CHANGE = 11;
+
+        static const int EVT_WM_CHANGED = 20;
 
 
         int lastEvent = EVT_NO_EVENT;
@@ -50,6 +55,7 @@ class BinauralProject
             bool selected = false;
             double volume = 1.0;
             double totalTime = 60.0;
+            double startDelay = 0.0;
             double minPause = 0.0;
             double maxPause = 0.0;
             double minSpeed = 1.0;

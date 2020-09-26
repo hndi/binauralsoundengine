@@ -79,6 +79,10 @@ class BinauralFilterGUIFrame: public wxFrame
         void OnMenuSceneSettings(wxCommandEvent &event);
         void OnWindowResize(wxSizeEvent &event);
 
+        void OnViewTopClick(wxCommandEvent &event);
+        void OnViewFrontClick(wxCommandEvent &event);
+        void OnViewSideClick(wxCommandEvent &event);
+
         void OnRenderClick(wxCommandEvent &event);
         void OnAddSpeakerClick(wxCommandEvent &event);
         void OnAddHeadClick(wxCommandEvent &event);

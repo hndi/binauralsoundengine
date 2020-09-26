@@ -57,6 +57,7 @@ void ViewPort::OnDraw(wxDC& dc) {
     }
     double startPx, endPx, startPy, endPy;
     switch (view) {
+
         case VIEW_TOP:
             startPx = round(screenPointTo3D(wxPoint(0, 0)).x / gridSize) * gridSize;
             endPx = round(screenPointTo3D(wxPoint(width, 0)).x / gridSize) * gridSize;
@@ -96,19 +97,132 @@ void ViewPort::OnDraw(wxDC& dc) {
                 }
             }
             break;
+
+        case VIEW_FRONT:
+            startPx = round(screenPointTo3D(wxPoint(0, 0)).x / gridSize) * gridSize;
+            endPx = round(screenPointTo3D(wxPoint(width, 0)).x / gridSize) * gridSize;
+            for (double w = startPx; w < endPx; w += gridSize) {
+                if ((int)round(w / gridSize) % 10 == 0) {
+                    pen.SetColour(vpClrGrid10);
+                    dc.SetPen(pen);
+
+                } else {
+                    pen.SetColour(vpClrGrid1);
+                    dc.SetPen(pen);
+                }
+                dc.DrawLine(threeDToScreenPoint(c3DPoint(w, 0, 0)).x, 0, threeDToScreenPoint(c3DPoint(w, 0, 0)).x, height);
+            }
+
+            endPy = round(screenPointTo3D(wxPoint(0, 0)).z / gridSize) * gridSize;
+            startPy = round(screenPointTo3D(wxPoint(0, height)).z / gridSize) * gridSize;
+            for (double h = startPy; h < endPy; h += gridSize) {
+                if ((int)round(h / gridSize) % 10 == 0) {
+                    pen.SetColour(vpClrGrid10);
+                    dc.SetPen(pen);
+                } else {
+                    pen.SetColour(vpClrGrid1);
+                    dc.SetPen(pen);
+                }
+                dc.DrawLine(0, threeDToScreenPoint(c3DPoint(0, 0, h)).y, width, threeDToScreenPoint(c3DPoint(width, 0, h)).y);
+            }
+            for (double w = startPx; w < endPx; w += gridSize) {
+                if ((int)round(w / gridSize) % 10 == 0) {
+                    dc.DrawText(fToStr(w)+ "m", wxPoint(threeDToScreenPoint(c3DPoint(w, 0, 0)).x, height - 24));
+                }
+            }
+
+            for (double h = startPy; h < endPy; h += gridSize) {
+                if ((int)round(h / gridSize) % 10 == 0) {
+                    dc.DrawText(fToStr(h)+ "m", wxPoint(width - 50, threeDToScreenPoint(c3DPoint(0, 0, h)).y));
+                }
+            }
+            break;
+
+
+        case VIEW_SIDE:
+            startPx = round(screenPointTo3D(wxPoint(0, 0)).y / gridSize) * gridSize;
+            endPx = round(screenPointTo3D(wxPoint(width, 0)).y / gridSize) * gridSize;
+            for (double w = startPx; w < endPx; w += gridSize) {
+                if ((int)round(w / gridSize) % 10 == 0) {
+                    pen.SetColour(vpClrGrid10);
+                    dc.SetPen(pen);
+
+                } else {
+                    pen.SetColour(vpClrGrid1);
+                    dc.SetPen(pen);
+                }
+                dc.DrawLine(threeDToScreenPoint(c3DPoint(0, w, 0)).x, 0, threeDToScreenPoint(c3DPoint(0, w, 0)).x, height);
+            }
+
+            endPy = round(screenPointTo3D(wxPoint(0, 0)).z / gridSize) * gridSize;
+            startPy = round(screenPointTo3D(wxPoint(0, height)).z / gridSize) * gridSize;
+            for (double h = startPy; h < endPy; h += gridSize) {
+                if ((int)round(h / gridSize) % 10 == 0) {
+                    pen.SetColour(vpClrGrid10);
+                    dc.SetPen(pen);
+                } else {
+                    pen.SetColour(vpClrGrid1);
+                    dc.SetPen(pen);
+                }
+                dc.DrawLine(0, threeDToScreenPoint(c3DPoint(0, 0, h)).y, width, threeDToScreenPoint(c3DPoint(width, 0, h)).y);
+            }
+            for (double w = startPx; w < endPx; w += gridSize) {
+                if ((int)round(w / gridSize) % 10 == 0) {
+                    dc.DrawText(fToStr(w)+ "m", wxPoint(threeDToScreenPoint(c3DPoint(0, w, 0)).x, height - 24));
+                }
+            }
+            for (double h = startPy; h < endPy; h += gridSize) {
+                if ((int)round(h / gridSize) % 10 == 0) {
+                    dc.DrawText(fToStr(h)+ "m", wxPoint(width - 50, threeDToScreenPoint(c3DPoint(0, 0, h)).y));
+                }
+            }
+
+            break;
+
     }
 
     /* 0, 0, 0 center line */
     pen.SetWidth(1);
-    pen.SetColour(vpClrYAxis);
-    dc.SetPen(pen);
-    c3DPoint pt(0, 0, 0), pt2(0, 0, 0);
-    dc.DrawLine(wxPoint(threeDToScreenPoint(pt).x, 0),
-                wxPoint(threeDToScreenPoint(pt).x, height));
-    pen.SetColour(vpClrXAxis);
-    dc.SetPen(pen);
-    dc.DrawLine(wxPoint(0, threeDToScreenPoint(pt).y),
-                wxPoint(width, threeDToScreenPoint(pt).y));
+    switch (view) {
+        case VIEW_TOP: {
+            pen.SetColour(vpClrYAxis);
+            dc.SetPen(pen);
+            c3DPoint pt(0, 0, 0);
+            dc.DrawLine(wxPoint(threeDToScreenPoint(pt).x, 0),
+                        wxPoint(threeDToScreenPoint(pt).x, height));
+            pen.SetColour(vpClrXAxis);
+            dc.SetPen(pen);
+            dc.DrawLine(wxPoint(0, threeDToScreenPoint(pt).y),
+                        wxPoint(width, threeDToScreenPoint(pt).y));
+            break;
+        }
+
+        case VIEW_FRONT: {
+            pen.SetColour(vpClrZAxis);
+            dc.SetPen(pen);
+            c3DPoint pt(0, 0, 0);
+            dc.DrawLine(wxPoint(threeDToScreenPoint(pt).x, 0),
+                        wxPoint(threeDToScreenPoint(pt).x, height));
+            pen.SetColour(vpClrXAxis);
+            dc.SetPen(pen);
+            dc.DrawLine(wxPoint(0, threeDToScreenPoint(pt).y),
+                        wxPoint(width, threeDToScreenPoint(pt).y));
+            break;
+        }
+
+        case VIEW_SIDE: {
+            pen.SetColour(vpClrZAxis);
+            dc.SetPen(pen);
+            c3DPoint pt(0, 0, 0);
+            dc.DrawLine(wxPoint(threeDToScreenPoint(pt).x, 0),
+                        wxPoint(threeDToScreenPoint(pt).x, height));
+            pen.SetColour(vpClrYAxis);
+            dc.SetPen(pen);
+            dc.DrawLine(wxPoint(0, threeDToScreenPoint(pt).y),
+                        wxPoint(width, threeDToScreenPoint(pt).y));
+            break;
+        }
+    }
 
     brush.SetStyle(wxBRUSHSTYLE_TRANSPARENT);
     dc.SetBrush(brush);
@@ -413,8 +527,18 @@ wxPoint ViewPort::threeDToScreenPoint(c3DPoint pos) {
     wxPoint ret(0, 0);
     switch (view) {
         case VIEW_TOP:
-            ret.x = GetSize().GetWidth() / 2 + (pos.getX() - centerOfView.getX()) / zoom * GetSize().GetWidth() / 2;
-            ret.y = GetSize().GetHeight() - (GetSize().GetHeight() / 2 + (pos.getY() - centerOfView.getY()) / zoom * GetSize().GetWidth() / 2);
+            ret.x = GetSize().GetWidth() / 2.0 + (pos.x - centerOfView.x) / zoom * GetSize().GetWidth() / 2.0;
+            ret.y = GetSize().GetHeight() - (GetSize().GetHeight() / 2.0 + (pos.y - centerOfView.y) / zoom * GetSize().GetWidth() / 2.0);
+            return ret;
+
+        case VIEW_FRONT:
+            ret.x = GetSize().GetWidth() / 2.0 + (pos.x - centerOfView.x) / zoom * GetSize().GetWidth() / 2.0;
+            ret.y = GetSize().GetHeight() - (GetSize().GetHeight() / 2.0 + (pos.z - centerOfView.z) / zoom * GetSize().GetWidth() / 2.0);
+            return ret;
+
+        case VIEW_SIDE:
+            ret.x = GetSize().GetWidth() / 2.0 + (pos.y - centerOfView.y) / zoom * GetSize().GetWidth() / 2.0;
+            ret.y = GetSize().GetHeight() - (GetSize().GetHeight() / 2.0 + (pos.z - centerOfView.z) / zoom * GetSize().GetWidth() / 2.0);
             return ret;
     }
 
@@ -426,11 +550,24 @@ c3DPoint ViewPort::screenPointTo3D(wxPoint pos) {
 
     switch (view) {
         case VIEW_TOP:
-            ret.setPoint((pos.x - GetSize().GetWidth() / 2.0) / (GetSize().GetWidth() / 2.0)
-                         * zoom + centerOfView.getX(), ret.getY(), ret.getZ());
-            ret.setPoint(ret.getX(), ((GetSize().GetHeight() - pos.y) - GetSize().GetHeight() / 2.0) / (GetSize().GetWidth() / 2.0)
-                         * zoom + centerOfView.getY(), ret.getZ());
+            ret.x = (pos.x - GetSize().GetWidth() / 2.0) / (GetSize().GetWidth() / 2.0)
+                    * zoom + centerOfView.x;
+            ret.y = ((GetSize().GetHeight() - pos.y) - GetSize().GetHeight() / 2.0) / (GetSize().GetWidth() / 2.0)
+                    * zoom + centerOfView.y;
 
+            return ret;
+        case VIEW_FRONT:
+            ret.x = (pos.x - GetSize().GetWidth() / 2.0) / (GetSize().GetWidth() / 2.0)
+                    * zoom + centerOfView.x;
+            ret.z = ((GetSize().GetHeight() - pos.y) - GetSize().GetHeight() / 2.0) / (GetSize().GetWidth() / 2.0)
+                    * zoom + centerOfView.z;
+            return ret;
+
+        case VIEW_SIDE:
+            ret.y = (pos.x - GetSize().GetWidth() / 2.0) / (GetSize().GetWidth() / 2.0)
+                    * zoom + centerOfView.y;
+            ret.z = ((GetSize().GetHeight() - pos.y) - GetSize().GetHeight() / 2.0) / (GetSize().GetWidth() / 2.0)
+                    * zoom + centerOfView.z;
             return ret;
     }
 
@@ -444,13 +581,30 @@ void ViewPort::setProject(BinauralProject *project) {
 void ViewPort::OnMouseMove(wxMouseEvent &evt) {
     if (LeftMouseDown == true) {
         if (movingSelectedObjects == false) {
-            wxPoint tmp = threeDToScreenPoint(centerOfView) + (startDrag - evt.GetPosition());
-            setCenterOfView(screenPointTo3D(tmp));
+
+            c3DPoint p1 = screenPointTo3D(startDrag);
+            c3DPoint p2 = screenPointTo3D(evt.GetPosition());
+
+            switch (view) {
+                case VIEW_TOP:
+                    centerOfView.x += p1.x - p2.x;
+                    centerOfView.y += p1.y - p2.y;
+                    break;
+                case VIEW_FRONT:
+                    centerOfView.x += p1.x - p2.x;
+                    centerOfView.z += p1.z - p2.z;
+                    break;
+                case VIEW_SIDE:
+                    centerOfView.y += p1.y - p2.y;
+                    centerOfView.z += p1.z - p2.z;
+                    break;
+            }
+
         } else {
             moveSelectedObjects(evt);
         }
         Refresh();
-        evt.Skip();
+
         startDrag = evt.GetPosition();
     }
     if (onMouseMovePtr != nullptr) {
@@ -577,6 +731,48 @@ bool ViewPort::isObjectUnderMouse(int obj, wxPoint mousePos) {
             }
 
             break;
+
+        case VIEW_FRONT:
+            if (myProject->guiObjects[obj].objType == BinauralProject::OBJ_SPEAKER || myProject->guiObjects[obj].objType == BinauralProject::OBJ_RND_SPEAKER || myProject->guiObjects[obj].objType == BinauralProject::OBJ_WALL) {
+                if (abs(mouse3D.x - myProject->guiObjects[obj].pos.x) < tolerance &&
+                abs(mouse3D.z - myProject->guiObjects[obj].pos.z) < tolerance) {
+                    return true;
+                }
+            }
+            if (myProject->guiObjects[obj].objType == BinauralProject::OBJ_MICROPHONE) {
+                if (abs(mouse3D.x - myProject->guiObjects[obj].pos.x) < tolerance &&
+                abs(mouse3D.z - myProject->guiObjects[obj].pos.z) < tolerance) {
+                    return true;
+                }
+            }
+            if (myProject->guiObjects[obj].objType == BinauralProject::OBJ_HEAD) {
+                if (abs(mouse3D.x - myProject->guiObjects[obj].pos.x) < tolerance &&
+                abs(mouse3D.z - myProject->guiObjects[obj].pos.z) < tolerance) {
+                    return true;
+                }
+            }
+            break;
+
+        case VIEW_SIDE:
+            if (myProject->guiObjects[obj].objType == BinauralProject::OBJ_SPEAKER || myProject->guiObjects[obj].objType == BinauralProject::OBJ_RND_SPEAKER || myProject->guiObjects[obj].objType == BinauralProject::OBJ_WALL) {
+                if (abs(mouse3D.y - myProject->guiObjects[obj].pos.y) < tolerance &&
+                abs(mouse3D.z - myProject->guiObjects[obj].pos.z) < tolerance) {
+                    return true;
+                }
+            }
+            if (myProject->guiObjects[obj].objType == BinauralProject::OBJ_MICROPHONE) {
+                if (abs(mouse3D.y - myProject->guiObjects[obj].pos.y) < tolerance &&
+                abs(mouse3D.z - myProject->guiObjects[obj].pos.z) < tolerance) {
+                    return true;
+                }
+            }
+            if (myProject->guiObjects[obj].objType == BinauralProject::OBJ_HEAD) {
+                if (abs(mouse3D.y - myProject->guiObjects[obj].pos.y) < tolerance &&
+                abs(mouse3D.z - myProject->guiObjects[obj].pos.z) < tolerance) {
+                    return true;
+                }
+            }
+            break;
     }
     return false;
 }
@@ -589,6 +785,7 @@ bool ViewPort::isObjectSizerUnderMouse(int obj, wxPoint mousePos) {
     }
 
     switch (view) {
+
         case VIEW_TOP:
             if (myProject->guiObjects[obj].objType == BinauralProject::OBJ_RND_SPEAKER || myProject->guiObjects[obj].objType == BinauralProject::OBJ_WALL) {
                 if (abs(mouse3D.x - myProject->guiObjects[obj].pos2.x) < tolerance &&
@@ -596,6 +793,25 @@ bool ViewPort::isObjectSizerUnderMouse(int obj, wxPoint mousePos) {
                     return true;
                 }
             }
+            break;
+
+        case VIEW_FRONT:
+            if (myProject->guiObjects[obj].objType == BinauralProject::OBJ_RND_SPEAKER || myProject->guiObjects[obj].objType == BinauralProject::OBJ_WALL) {
+                if (abs(mouse3D.x - myProject->guiObjects[obj].pos2.x) < tolerance &&
+                abs(mouse3D.z - myProject->guiObjects[obj].pos2.z) < tolerance) {
+                    return true;
+                }
+            }
+            break;
+
+         case VIEW_SIDE:
+            if (myProject->guiObjects[obj].objType == BinauralProject::OBJ_RND_SPEAKER || myProject->guiObjects[obj].objType == BinauralProject::OBJ_WALL) {
+                if (abs(mouse3D.y - myProject->guiObjects[obj].pos2.y) < tolerance &&
+                abs(mouse3D.z - myProject->guiObjects[obj].pos2.z) < tolerance) {
+                    return true;
+                }
+            }
+            break;
     }
     return false;
 }
@@ -609,6 +825,7 @@ bool ViewPort::isObjectCenterUnderMouse(int obj, wxPoint mousePos) {
     }
 
     switch (view) {
+
         case VIEW_TOP:
             if (myProject->guiObjects[obj].objType == BinauralProject::OBJ_RND_SPEAKER || myProject->guiObjects[obj].objType == BinauralProject::OBJ_WALL) {
                 if (abs(mouse3D.x - (myProject->guiObjects[obj].pos2.x + myProject->guiObjects[obj].pos.x) / 2) < tolerance &&
@@ -616,6 +833,26 @@ bool ViewPort::isObjectCenterUnderMouse(int obj, wxPoint mousePos) {
                     return true;
                 }
             }
+            break;
+
+
+        case VIEW_FRONT:
+            if (myProject->guiObjects[obj].objType == BinauralProject::OBJ_RND_SPEAKER || myProject->guiObjects[obj].objType == BinauralProject::OBJ_WALL) {
+                if (abs(mouse3D.x - (myProject->guiObjects[obj].pos2.x + myProject->guiObjects[obj].pos.x) / 2) < tolerance &&
+                abs(mouse3D.z - (myProject->guiObjects[obj].pos2.z + myProject->guiObjects[obj].pos.z) / 2) < tolerance) {
+                    return true;
+                }
+            }
+            break;
+
+        case VIEW_SIDE:
+            if (myProject->guiObjects[obj].objType == BinauralProject::OBJ_RND_SPEAKER || myProject->guiObjects[obj].objType == BinauralProject::OBJ_WALL) {
+                if (abs(mouse3D.y - (myProject->guiObjects[obj].pos2.y + myProject->guiObjects[obj].pos.y) / 2) < tolerance &&
+                abs(mouse3D.z - (myProject->guiObjects[obj].pos2.z + myProject->guiObjects[obj].pos.z) / 2) < tolerance) {
+                    return true;
+                }
+            }
+            break;
     }
 
     return false;
@@ -655,6 +892,7 @@ void ViewPort::unselectAll() {
 int ViewPort::getDragAxis(c3DPoint pos1, c3DPoint pos2){
     float relation;
     switch (view) {
+
         case VIEW_TOP:
             relation = abs(pos2.x - pos1.x) /
                        abs(pos2.y - pos1.y);
@@ -665,6 +903,30 @@ int ViewPort::getDragAxis(c3DPoint pos1, c3DPoint pos2){
                 return DRAG_AXIS_ONLY_Y;
             }
             return DRAG_AXIS_BOTH;
+
+         case VIEW_FRONT:
+            relation = abs(pos2.x - pos1.x) /
+                       abs(pos2.z - pos1.z);
+
+            if (relation > 2) {
+                return DRAG_AXIS_ONLY_X;
+            }
+            if (relation < .5) {
+                return DRAG_AXIS_ONLY_Y;
+            }
+            return DRAG_AXIS_BOTH;
+
+            case VIEW_SIDE:
+                relation = abs(pos2.y - pos1.y) /
+                           abs(pos2.z - pos1.z);
+                if (relation > 2) {
+                    return DRAG_AXIS_ONLY_X;
+                }
+                if (relation < .5) {
+                    return DRAG_AXIS_ONLY_Y;
+                }
+                return DRAG_AXIS_BOTH;
+
     }
 
     return DRAG_AXIS_BOTH;
@@ -697,7 +959,7 @@ void ViewPort::moveSelectedObjects(wxMouseEvent &evt) {
             if (dragType == DRAG_POS1 || dragType == DRAG_POS1_AND_2) {
                 myProject->guiObjects[i].pos.x += p2.x - p1.x;
                 myProject->guiObjects[i].pos.y += p2.y - p1.y;
-                myProject->guiObjects[i].pos.z += p2.z - p1.z; //todo: perspective
+                myProject->guiObjects[i].pos.z += p2.z - p1.z;
             }
             if (dragType == DRAG_POS2 || dragType == DRAG_POS1_AND_2) {
                 myProject->guiObjects[i].pos2.x += p2.x - p1.x;
@@ -707,7 +969,6 @@ void ViewPort::moveSelectedObjects(wxMouseEvent &evt) {
 
             if (myProject->guiObjects[i].objType == BinauralProject::OBJ_WALL) {
 
-
                 if (dragType == DRAG_POS1) {
 
                     if (isInGroup == true) {
@@ -716,23 +977,57 @@ void ViewPort::moveSelectedObjects(wxMouseEvent &evt) {
                         dragAxis = getDragAxis(myProject->guiObjects[i].pos2, p2);
                     }
 
-
                     if (dragAxis == DRAG_AXIS_ONLY_X) {
-                        myProject->guiObjects[i].pos.y = myProject->guiObjects[i].pos2.y;
+                        //lock 2nd axis, depending on view
+                        if (view == VIEW_TOP) {
+                            myProject->guiObjects[i].pos.y = myProject->guiObjects[i].pos2.y;
+                        }
+                        if (view == VIEW_FRONT) {
+                            myProject->guiObjects[i].pos.z = myProject->guiObjects[i].pos2.z;
+                        }
+                        if (view == VIEW_SIDE) {
+                            myProject->guiObjects[i].pos.z = myProject->guiObjects[i].pos2.z;
+                        }
+
                     }
                     if (dragAxis == DRAG_AXIS_ONLY_Y) {
-                        myProject->guiObjects[i].pos.x = myProject->guiObjects[i].pos2.x;
+                        //lock 2nd axis, depending on view
+                        if (view == VIEW_TOP) {
+                            myProject->guiObjects[i].pos.x = myProject->guiObjects[i].pos2.x;
+                        }
+                        if (view == VIEW_FRONT) {
+                            myProject->guiObjects[i].pos.x = myProject->guiObjects[i].pos2.x;
+                        }
+                        if (view == VIEW_SIDE) {
+                            myProject->guiObjects[i].pos.y = myProject->guiObjects[i].pos2.y;
+                        }
                     }
 
                     if (dragCoAxis == DRAG_AXIS_ONLY_X) {
-                        myProject->guiObjects[i].pos2.x = myProject->guiObjects[i].pos.x;
+                        if (view == VIEW_TOP) {
+                            myProject->guiObjects[i].pos2.x = myProject->guiObjects[i].pos.x;
+                        }
+                        if (view == VIEW_FRONT) {
+                            myProject->guiObjects[i].pos2.x = myProject->guiObjects[i].pos.x;
+                        }
+                        if (view == VIEW_SIDE) {
+                            myProject->guiObjects[i].pos2.y = myProject->guiObjects[i].pos.y;
+                        }
                     }
-                    if (dragCoAxis == DRAG_AXIS_ONLY_Y) {
-                        myProject->guiObjects[i].pos2.y = myProject->guiObjects[i].pos.y;
 
+                    if (dragCoAxis == DRAG_AXIS_ONLY_Y) {
+                        if (view == VIEW_TOP) {
+                            myProject->guiObjects[i].pos2.y = myProject->guiObjects[i].pos.y;
+                        }
+                        if (view == VIEW_FRONT) {
+                            myProject->guiObjects[i].pos2.z = myProject->guiObjects[i].pos.z;
+                        }
+                        if (view == VIEW_SIDE) {
+                            myProject->guiObjects[i].pos2.z = myProject->guiObjects[i].pos.z;
+                        }
                     }
                 }
-
+                //hier weiter
 
                 if (dragType == DRAG_POS2) {
                     if (isInGroup == true) {
@@ -740,18 +1035,53 @@ void ViewPort::moveSelectedObjects(wxMouseEvent &evt) {
                     } else {
                         dragAxis = getDragAxis(myProject->guiObjects[i].pos, p2);
                     }
+
                     if (dragAxis == DRAG_AXIS_ONLY_X) {
-                        myProject->guiObjects[i].pos2.y = myProject->guiObjects[i].pos.y;
+                        if (view == VIEW_TOP) {
+                            myProject->guiObjects[i].pos2.y = myProject->guiObjects[i].pos.y;
+                        }
+                        if (view == VIEW_FRONT) {
+                            myProject->guiObjects[i].pos2.z = myProject->guiObjects[i].pos.z;
+                        }
+                        if (view == VIEW_SIDE) {
+                            myProject->guiObjects[i].pos2.z = myProject->guiObjects[i].pos.z;
+                        }
                     }
+
                     if (dragAxis == DRAG_AXIS_ONLY_Y) {
-                        myProject->guiObjects[i].pos2.x = myProject->guiObjects[i].pos.x;
+                        if (view == VIEW_TOP) {
+                            myProject->guiObjects[i].pos2.x = myProject->guiObjects[i].pos.x;
+                        }
+                        if (view == VIEW_FRONT) {
+                            myProject->guiObjects[i].pos2.x = myProject->guiObjects[i].pos.x;
+                        }
+                        if (view == VIEW_SIDE) {
+                            myProject->guiObjects[i].pos2.y = myProject->guiObjects[i].pos.y;
+                        }
                     }
 
                     if (dragCoAxis == DRAG_AXIS_ONLY_X) {
-                        myProject->guiObjects[i].pos.x = myProject->guiObjects[i].pos2.x;
+                        if (view == VIEW_TOP) {
+                            myProject->guiObjects[i].pos.x = myProject->guiObjects[i].pos2.x;
+                        }
+                        if (view == VIEW_FRONT) {
+                            myProject->guiObjects[i].pos.x = myProject->guiObjects[i].pos2.x;
+                        }
+                        if (view == VIEW_SIDE) {
+                            myProject->guiObjects[i].pos.y = myProject->guiObjects[i].pos2.y;
+                        }
                     }
+
                     if (dragCoAxis == DRAG_AXIS_ONLY_Y) {
-                        myProject->guiObjects[i].pos.y = myProject->guiObjects[i].pos2.y;
+                        if (view == VIEW_TOP) {
+                            myProject->guiObjects[i].pos.y = myProject->guiObjects[i].pos2.y;
+                        }
+                        if (view == VIEW_FRONT) {
+                            myProject->guiObjects[i].pos.z = myProject->guiObjects[i].pos2.z;
+                        }
+                        if (view == VIEW_SIDE) {
+                            myProject->guiObjects[i].pos.z = myProject->guiObjects[i].pos2.z;
+                        }
                     }
                 }
 
@@ -760,13 +1090,33 @@ void ViewPort::moveSelectedObjects(wxMouseEvent &evt) {
                         dragAxis = getDragAxisForWallGroups(i, dragType);
 
                         if (dragAxis == DRAG_AXIS_ONLY_X) {
-
-                            myProject->guiObjects[i].pos2.y = oldPos2.y;
-                            myProject->guiObjects[i].pos.y = oldPos1.y;
+                            if (view == VIEW_TOP) {
+                                myProject->guiObjects[i].pos2.y = oldPos2.y;
+                                myProject->guiObjects[i].pos.y = oldPos1.y;
+                            }
+                            if (view == VIEW_FRONT) {
+                                myProject->guiObjects[i].pos2.z = oldPos2.z;
+                                myProject->guiObjects[i].pos.z = oldPos1.z;
+                            }
+                            if (view == VIEW_SIDE) {
+                                myProject->guiObjects[i].pos2.z = oldPos2.z;
+                                myProject->guiObjects[i].pos.z = oldPos1.z;
+                            }
                         }
+
                         if (dragAxis == DRAG_AXIS_ONLY_Y) {
-                            myProject->guiObjects[i].pos.x = oldPos1.x;
-                            myProject->guiObjects[i].pos2.x = oldPos2.x;
+                            if (view == VIEW_TOP) {
+                                myProject->guiObjects[i].pos.x = oldPos1.x;
+                                myProject->guiObjects[i].pos2.x = oldPos2.x;
+                            }
+                            if (view == VIEW_FRONT) {
+                                myProject->guiObjects[i].pos.x = oldPos1.x;
+                                myProject->guiObjects[i].pos2.x = oldPos2.x;
+                            }
+                            if (view == VIEW_SIDE) {
+                                myProject->guiObjects[i].pos.y = oldPos1.y;
+                                myProject->guiObjects[i].pos2.y = oldPos2.y;
+                            }
 
                         }
 
@@ -786,23 +1136,60 @@ int ViewPort::getDragAxisForWallGroups(int objNr, int dragType) {
 
         case VIEW_TOP:
             switch (myProject->getWallType(objNr)) {
+
                 case  BinauralProject::WT_FRONT:
                     if (dragType == DRAG_POS1_AND_2) {
                         return DRAG_AXIS_ONLY_Y;
-
                     }
                     break;
+
                 case BinauralProject::WT_SIDE:
                     if (dragType == DRAG_POS1_AND_2) {
                         return DRAG_AXIS_ONLY_X;
                     }
                     break;
+            }
 
+            break;
+
+        case VIEW_FRONT:
+            switch (myProject->getWallType(objNr)) {
+
+                case  BinauralProject::WT_TOP:
+                    if (dragType == DRAG_POS1_AND_2) {
+                        return DRAG_AXIS_ONLY_Y;
+                    }
+                    break;
+
+                case BinauralProject::WT_SIDE:
+                    if (dragType == DRAG_POS1_AND_2) {
+                        return DRAG_AXIS_ONLY_X;
+                    }
+                    break;
+            }
+
+            break;
+
+        case VIEW_SIDE:
+            switch (myProject->getWallType(objNr)) {
+
+                case  BinauralProject::WT_TOP:
+                    if (dragType == DRAG_POS1_AND_2) {
+                        return DRAG_AXIS_ONLY_Y;
+                    }
+                    break;
+
+                case BinauralProject::WT_FRONT:
+                    if (dragType == DRAG_POS1_AND_2) {
+                        return DRAG_AXIS_ONLY_X;
+                    }
+                    break;
             }
 
             break;
 
     }
+
     return DRAG_AXIS_BOTH;
 }
 
@@ -811,12 +1198,13 @@ int ViewPort::getCoAxisForWallGroups(int objNr, int dragType) {
 
         case VIEW_TOP:
             switch (myProject->getWallType(objNr)) {
+
                 case  BinauralProject::WT_FRONT:
                     if (dragType == DRAG_POS1 || dragType == DRAG_POS2) {
                         return DRAG_AXIS_ONLY_Y;
                     }
-
                     break;
+
                 case BinauralProject::WT_SIDE:
                     if (dragType == DRAG_POS1 || dragType == DRAG_POS2) {
                         return DRAG_AXIS_ONLY_X;
@@ -826,6 +1214,47 @@ int ViewPort::getCoAxisForWallGroups(int objNr, int dragType) {
 
             break;
 
+        case VIEW_FRONT:
+            switch (myProject->getWallType(objNr)) {
+
+                case  BinauralProject::WT_TOP:
+                    if (dragType == DRAG_POS1 || dragType == DRAG_POS2) {
+                        return DRAG_AXIS_ONLY_Y;
+                    }
+                    break;
+
+                case BinauralProject::WT_SIDE:
+                    if (dragType == DRAG_POS1 || dragType == DRAG_POS2) {
+                        return DRAG_AXIS_ONLY_X;
+                    }
+                    break;
+            }
+
+            break;
+
+        case VIEW_SIDE:
+            switch (myProject->getWallType(objNr)) {
+
+                case  BinauralProject::WT_TOP:
+                    if (dragType == DRAG_POS1 || dragType == DRAG_POS2) {
+                        return DRAG_AXIS_ONLY_Y;
+                    }
+                    break;
+
+                case BinauralProject::WT_FRONT:
+                    if (dragType == DRAG_POS1 || dragType == DRAG_POS2) {
+                        return DRAG_AXIS_ONLY_X;
+                    }
+                    break;
+            }
+
+            break;
     }
+
     return DRAG_AXIS_BOTH;
+}
+
+void ViewPort::setView(int newView) {
+    view = newView;
+    Refresh();
 }
