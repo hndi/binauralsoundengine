@@ -9,6 +9,7 @@ wxBEGIN_EVENT_TABLE(ViewPort, wxWindow)
     EVT_LEFT_DOWN(ViewPort::OnMouseDown)
     EVT_LEFT_UP(ViewPort::OnMouseUp)
     EVT_MOUSEWHEEL(ViewPort::OnMouseWheel)
+    EVT_SIZE(ViewPort::OnSize)
 wxEND_EVENT_TABLE()
 
 ViewPort::ViewPort(wxWindow *parent, const wxPoint &pos, const wxSize &size) : wxWindow(parent, wxID_ANY, pos, size) {
@@ -229,8 +230,8 @@ void ViewPort::OnDraw(wxDC& dc) {
     renderObjects(dc, pen, brush);
 
     /* TEMP */
-    dc.SetTextForeground(wxColour(255, 0, 255));
     if (debugString != "") {
+        dc.SetTextForeground(wxColour(255, 0, 255));
         dc.DrawText(debugString, wxPoint(10, 30));
     }
 }
@@ -440,6 +441,7 @@ void ViewPort::RenderWallModifier(wxDC &dc, wxPen &pen, wxBrush &wxBrush, int ob
 
     float start, stop;
     switch (view) {
+
         case VIEW_TOP:
             if (myProject->getWallType(objNr) == BinauralProject::WT_SIDE) {
                 start = std::min(myProject->guiObjects[objNr].pos.y, myProject->guiObjects[objNr].pos2.y);
@@ -465,8 +467,24 @@ void ViewPort::RenderWallModifier(wxDC &dc, wxPen &pen, wxBrush &wxBrush, int ob
                     }
                 }
             }
+            break;
+
+        case VIEW_FRONT:
+            if (myProject->getWallType(objNr) == BinauralProject::WT_TOP) {
+                start = std::min(myProject->guiObjects[objNr].pos.x, myProject->guiObjects[objNr].pos2.x);
+                stop = std::max(myProject->guiObjects[objNr].pos.x, myProject->guiObjects[objNr].pos2.x);
+                for (float p = start; p < stop; p += zoom / 80) {
+                    if (p >= screenPos1.x && p <= screenPos2.x) {
+                        dc.DrawCircle(
+                                      threeDToScreenPoint(c3DPoint(p, 0, myProject->guiObjects[objNr].pos.z
+                                      + myProject->getModifiedWallAmplitude(usedMod, p, amplitude,
+                                      shift, waveLength))), 1);
+                    }
+                }
+            }
 
             break;
+
     }
 }
 
@@ -475,6 +493,9 @@ void ViewPort::RenderMovementPath(wxDC &dc, wxPen &pen, wxBrush &wxBrush, int ob
     c3DPoint screenPos2 = screenPointTo3D(wxPoint(GetSize().GetWidth(), GetSize().GetHeight()));
     c3DPoint pos, lastPos = myProject->guiObjects[objNr].pos;
     int pw = pen.GetWidth();
+    bool highlightNextKF = false;
+    double KFtime, lastKFtime = 0.0;
+    wxColour tmpCol;
 
     pen.SetWidth(1);
     if (myProject->guiObjects[objNr].selected == false) {
@@ -482,25 +503,85 @@ void ViewPort::RenderMovementPath(wxDC &dc, wxPen &pen, wxBrush &wxBrush, int ob
     }
     dc.SetPen(pen);
     wxStringTokenizer token(myProject->guiObjects[objNr].keyFrames, "/");
+
     while(token.HasMoreTokens()) {
         wxString keyStr = token.GetNextToken();
         wxStringTokenizer keyToken(keyStr, ",");
-        keyToken.GetNextToken();
+        KFtime = atof(keyToken.GetNextToken());
         pos.x = myProject->guiObjects[objNr].pos.x + atof(keyToken.GetNextToken());
         pos.y = myProject->guiObjects[objNr].pos.y + atof(keyToken.GetNextToken());
         pos.z = myProject->guiObjects[objNr].pos.z + atof(keyToken.GetNextToken());
 
+        if ((flags & VP_HIGHLIGHT_NEXT_KF) > 0 && KFtime >= time && lastKFtime < time) {
+            highlightNextKF = true;
+        }
         //todo: line is not drawn when points are out of view but line should be in view
-        if ((pos.x >= screenPos1.x && pos.x <= screenPos2.x && pos.y >= screenPos2.y && pos.y <= screenPos1.y)
-            || (lastPos.x >= screenPos1.x && lastPos.x <= screenPos2.x && lastPos.y >= screenPos2.y && lastPos.y <= screenPos1.y)) {
+        bool draw = false;
+        switch (view) {
+            case VIEW_TOP:
+                if ((pos.x >= screenPos1.x && pos.x <= screenPos2.x && pos.y >= screenPos2.y && pos.y <= screenPos1.y)
+                    || (lastPos.x >= screenPos1.x && lastPos.x <= screenPos2.x && lastPos.y
+                    >= screenPos2.y && lastPos.y <= screenPos1.y)) {
+
+                        draw = true;
+                }
+                break;
+
+            case VIEW_FRONT:
+                if ((pos.x >= screenPos1.x && pos.x <= screenPos2.x && pos.z >= screenPos2.z && pos.z <= screenPos1.z)
+                    || (lastPos.x >= screenPos1.x && lastPos.x <= screenPos2.x && lastPos.z
+                    >= screenPos2.z && lastPos.z <= screenPos1.z)) {
+
+                        draw = true;
+                }
+                break;
+
+            case VIEW_SIDE:
+                if ((pos.y >= screenPos1.y && pos.y <= screenPos2.y && pos.z >= screenPos2.z && pos.z <= screenPos1.z)
+                    || (lastPos.y >= screenPos1.y && lastPos.y <= screenPos2.y && lastPos.z
+                    >= screenPos2.z && lastPos.z <= screenPos1.z)) {
+
+                        draw = true;
+                }
+                break;
+
+        }
+
+        if (draw == true) {
             dc.DrawLine(threeDToScreenPoint(lastPos), threeDToScreenPoint(pos));
+
+            if (highlightNextKF == true) {
+                tmpCol = pen.GetColour();
+                pen.SetColour(vpClrHighlNextKF);
+                dc.SetPen(pen);
+            }
             dc.DrawCircle(threeDToScreenPoint(pos), 2);
+
+            if (highlightNextKF == true) {
+                highlightNextKF = false;
+                pen.SetColour(tmpCol);
+                dc.SetPen(pen);
+            }
+
         }
         lastPos = pos;
+        lastKFtime = KFtime;
+    }
+
+    if ((flags & VP_SHOW_MOV_POS_ALL) > 0) {
+        if (myProject->guiObjects[objNr].selected == true) {
+            pen.SetColour(vpClrMovPosSel);
+        } else {
+            pen.SetColour(vpClrMovPos);
+
+        }
+        dc.SetPen(pen);
+        dc.DrawCircle(threeDToScreenPoint(myProject->getMovementPointAtTimeStamp(objNr, time)), 8);
     }
 
     pen.SetWidth(pw);
     dc.SetPen(pen);
+
 }
 
 
@@ -607,6 +688,9 @@ void ViewPort::OnMouseMove(wxMouseEvent &evt) {
 
         startDrag = evt.GetPosition();
     }
+
+    lastMousePosition = screenPointTo3D(evt.GetPosition());
+
     if (onMouseMovePtr != nullptr) {
         onMouseMovePtr(evt.GetPosition().x, evt.GetPosition().y);
     }
@@ -649,11 +733,16 @@ void ViewPort::OnMouseUp(wxMouseEvent &evt) {
     if (abs(lastMouseDown.x - evt.GetPosition().x) < 2 &&
         abs(lastMouseDown.y - evt.GetPosition().y) < 2) {
 
-        int obj = findNextObjOnPos(lastMouseDown);
-        setObjectSelection(true, obj, true);
-        myProject->tempEvent.lastEvent = TempEvents::EVT_VP_SELECTION;
-        myProject->tempEvent.objNr = obj;
-        Refresh();
+        if ((flags & VP_NO_SELECTION) == 0) {
+            int obj = findNextObjOnPos(lastMouseDown);
+            setObjectSelection(true, obj, true);
+            myProject->tempEvent.lastEvent = TempEvents::EVT_VP_SELECTION;
+            myProject->tempEvent.objNr = obj;
+            Refresh();
+        }
+
+        lastClickPosition = screenPointTo3D(evt.GetPosition());
+
     }
     LeftMouseDown = false;
 
@@ -1257,4 +1346,9 @@ int ViewPort::getCoAxisForWallGroups(int objNr, int dragType) {
 void ViewPort::setView(int newView) {
     view = newView;
     Refresh();
+}
+
+void ViewPort::OnSize(wxSizeEvent &evt) {
+    Refresh();
+    evt.Skip();
 }

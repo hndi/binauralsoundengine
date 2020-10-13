@@ -13,6 +13,11 @@ class ViewPort : public wxWindow
         static const int VIEW_FRONT = 1;
         static const int VIEW_SIDE = 2;
 
+        static const int VP_NO_SELECTION = 1;
+        static const int VP_SHOW_MOV_POS_SEL = 2;
+        static const int VP_SHOW_MOV_POS_ALL = 4;
+        static const int VP_HIGHLIGHT_NEXT_KF = 8;
+
         ViewPort(wxWindow *parent, const wxPoint &pos, const wxSize &size);
         ~ViewPort();
 
@@ -36,7 +41,15 @@ class ViewPort : public wxWindow
         bool isObjectSizerUnderMouse(int objNr, wxPoint mousePos);
         bool isObjectCenterUnderMouse(int objNr, wxPoint mousePos);
         bool isSelectedObjectUnderMouse(wxPoint mousePos);
-        wxString debugString = "";
+
+        wxString debugString;
+        c3DPoint lastMousePosition;
+        c3DPoint lastClickPosition;
+        int flags = 0;
+        float time = 0.0;
+        int view = VIEW_TOP;
+
+
     private:
         static const int DRAG_POS1 = 0;
         static const int DRAG_POS2 = 1;
@@ -59,7 +72,9 @@ class ViewPort : public wxWindow
         wxColour vpClrMic           = wxColour(0, 32, 64);
         wxColour vpClrWall          = wxColour(0, 48, 0);
         wxColour vpClrPath          = wxColour(48, 24, 0);
-
+        wxColour vpClrMovPos        = wxColour(48, 24, 0);
+        wxColour vpClrMovPosSel     = wxColour(48, 192, 48);
+        wxColour vpClrHighlNextKF   = wxColour(255, 0, 255);
 
 
         void OnDraw(wxDC& dc);
@@ -68,6 +83,7 @@ class ViewPort : public wxWindow
         void OnMouseDown(wxMouseEvent &evt);
         void OnMouseUp(wxMouseEvent &evt);
         void OnMouseWheel(wxMouseEvent &evt);
+        void OnSize(wxSizeEvent &evt);
 
         int getDragAxis(c3DPoint pos1, c3DPoint pos2);
         void moveSelectedObjects(wxMouseEvent &evt);
@@ -76,7 +92,6 @@ class ViewPort : public wxWindow
         double getTolerance(double def = 0.3);
         c3DPoint centerOfView;
         double zoom = 5.0;
-        int view = VIEW_TOP;
         int dragType;
         int dragAxis;
         bool LeftMouseDown = false;

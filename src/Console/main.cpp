@@ -343,6 +343,7 @@ int8_t Speaker::start() {
             samples[i] *= volume;
         }
     } else {
+        sampleCount = 0;
         fileStatus = STATUS_FILE_FAILED;
     }
     return fileStatus;
@@ -988,6 +989,7 @@ int8_t BinauralEngine::start() {
             //Check if the total number of samples needs to be expanded.
             if (speakers[i]->sampleCount + speakers[i]->startDelaySamples > totalSamples) {
                 totalSamples = speakers[i]->sampleCount + speakers[i]->startDelaySamples;
+
             }
 
             actualSpeakers = i;
@@ -1058,6 +1060,7 @@ int8_t BinauralEngine::start() {
                     rndSpeakers[i]->nrSpawns = spawnNr + 1;
                     if (nextStart > totalSamples) {
                         totalSamples = nextStart;
+
                     }
                 }
             }
@@ -1068,7 +1071,9 @@ int8_t BinauralEngine::start() {
 
     //Additional time is added to allow sound reverb to be processed.
     if (totalSamples > 0) {
+
         totalSamples += settings.additionalTime * settings.sampleRate;
+
     }
 
     /* Just print the area of the walls for information and calculate totalReflection area, which is used
@@ -1789,7 +1794,7 @@ void BinauralEngine::calcReflMovingSpeakerSamples(SpeakerBE *speaker, Reflector 
                 refl[reflNr].tMics[micNr].damperStrength = (1.0 + (refl[reflNr].tMics[micNr].currMicDist + reflDist)
                                                             / settings.airDamping) / refl[reflNr].totalReflAmount;
 
-                
+
                 refl[reflNr].tMics[micNr].damper +=  (speaker->samples[sampleNr] - refl[reflNr].tMics[micNr].damper) /
                         refl[reflNr].tMics[micNr].damperStrength;
 
@@ -1892,8 +1897,8 @@ void configEngineByFile(BinauralEngine &binaural, string fileName) {
 
             if (pos > 0 && (int32_t)str.length() > pos) {
                 value = str.substr(pos + 1);
-                //cout << "ARG: " << arg << endl;
-                for (uint16_t i = i; i < 16; i++) {
+
+                for (uint16_t i = 0; i < 16; i++) {
                     subVals[i] = "";
                 }
                 oldPos = 0;

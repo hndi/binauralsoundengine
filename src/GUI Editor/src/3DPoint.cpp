@@ -27,3 +27,11 @@ double c3DPoint::getY() {
 double c3DPoint::getZ() {
     return z;
 }
+
+bool operator!=(const c3DPoint &p1, const c3DPoint &p2) {
+    return (p1.x != p2.x || p1.y != p2.y || p1.z != p2.z);
+}
+
+bool operator==(const c3DPoint &p1, const c3DPoint &p2) {
+    return (p1.x == p2.x && p1.y == p2.y && p1.z == p2.z);
+}

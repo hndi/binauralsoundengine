@@ -14,6 +14,10 @@ class c3DPoint
         double getZ();
 
         double x, y, z;
+
+        friend bool operator!=(const c3DPoint &p1, const c3DPoint &p2);
+        friend bool operator==(const c3DPoint &p1, const c3DPoint &p2);
+
     protected:
 
     private:

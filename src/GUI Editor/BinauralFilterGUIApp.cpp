@@ -22,7 +22,7 @@ IMPLEMENT_APP(BinauralFilterGUIApp);
 
 bool BinauralFilterGUIApp::OnInit()
 {
-    BinauralFilterGUIFrame* frame = new BinauralFilterGUIFrame(0L, _("Binaural Filter GUI Editor 0.5"));
+    BinauralFilterGUIFrame* frame = new BinauralFilterGUIFrame(0L, _("Binaural Filter GUI Editor 0.7"));
     frame->SetSize(wxSize(1024, 600));
     frame->Show();
 

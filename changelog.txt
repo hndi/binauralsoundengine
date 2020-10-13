@@ -1,3 +1,10 @@
+0.7
+* GUI: Movement path and wall modifiers displayed in side/front perspective
+* Fixed a bug where the engine took several GB of ram when a speaker path was invalid
+* GUI: Movement Path Editor
+* GUI: Optical improvements
+* Minor improvements and fixes
+
 0.6
 * Engine: Added 'start delay' for speakers
 * Engine: Added flags ('disabled', 'no direct', 'no indirect') for speakers and rndspeakers

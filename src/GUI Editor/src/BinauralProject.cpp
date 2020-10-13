@@ -45,7 +45,7 @@ bool BinauralProject::loadFromFile(wxString fileName) {
 
                 if (pos > 0 && (int32_t)str.length() > pos) {
                     value = str.substr(pos + 1);
-                    for (uint16_t i = i; i < 16; i++) {
+                    for (uint16_t i = 0; i < 16; i++) {
                         subVals[i] = "";
                     }
                     oldPos = 0;
@@ -684,3 +684,151 @@ double BinauralProject::getModifiedWallAmplitude(int usedModifier, double positi
 
     return 0.0;
 }
+
+c3DPoint BinauralProject::getMovementPointAtTimeStamp(int objNr, double timeStamp) {
+    c3DPoint ret = c3DPoint(0, 0, 0);
+
+    if (objNr >= 0 && objNr < MAX_OBJECTS && guiObjects[objNr].objType == OBJ_SPEAKER) {
+        if (guiObjects[objNr].keyFrames == "") {
+            return guiObjects[objNr].pos;
+        }
+
+        if (timeStamp < guiObjects[objNr].startDelay) {
+            return guiObjects[objNr].pos;
+        }
+
+        wxStringTokenizer token(guiObjects[objNr].keyFrames, "/");
+
+        double tmpTime, lastTmpTime = guiObjects[objNr].startDelay;
+        c3DPoint pos, lastPos = guiObjects[objNr].pos;
+        while(token.HasMoreTokens()) {
+            wxString keyStr = token.GetNextToken();
+            wxStringTokenizer keyToken(keyStr, ",");
+
+            tmpTime = atof(keyToken.GetNextToken()) + guiObjects[objNr].startDelay;
+            pos.x = guiObjects[objNr].pos.x + atof(keyToken.GetNextToken());
+            pos.y = guiObjects[objNr].pos.y + atof(keyToken.GetNextToken());
+            pos.z = guiObjects[objNr].pos.z + atof(keyToken.GetNextToken());
+
+            if (tmpTime > timeStamp) {
+                ret.x = (pos.x - lastPos.x) / (tmpTime - lastTmpTime) * (timeStamp - lastTmpTime) + lastPos.x;
+                ret.y = (pos.y - lastPos.y) / (tmpTime - lastTmpTime) * (timeStamp - lastTmpTime) + lastPos.y;
+                ret.z = (pos.z - lastPos.z) / (tmpTime - lastTmpTime) * (timeStamp - lastTmpTime) + lastPos.z;
+
+                return ret;
+            }
+
+            lastTmpTime = tmpTime;
+            lastPos = pos;
+            ret = pos;
+        }
+
+    }
+    return ret;
+}
+
+
+void BinauralProject::smoothKeyFrames(int objNr, float amount) {
+    if (objNr < 0 || objNr >= MAX_OBJECTS) {
+        return;
+    }
+
+    /*int iAmount = (int)amount;
+    struct Point {
+        c3DPoint pos;
+        double time;
+    } points[iAmount + 2], tmpPoint;
+    float strength[iAmount + 2];
+    bool firstKeyFrame = true;
+    */
+    wxString newKFStr;
+    c3DPoint point;
+    double time;
+    double damperX =0.0, damperY=0.0, damperZ=0.0;
+
+    wxStringTokenizer token(guiObjects[objNr].keyFrames, "/");
+    while(token.HasMoreTokens()) {
+        wxString keyStr = token.GetNextToken();
+        wxStringTokenizer keyToken(keyStr, ",");
+
+        time = atof(keyToken.GetNextToken());
+        point.x = atof(keyToken.GetNextToken());
+        point.y = atof(keyToken.GetNextToken());
+        point.z = atof(keyToken.GetNextToken());
+
+        damperX += (point.x - damperX) / amount;
+        damperY += (point.y - damperY) / amount;
+        damperZ += (point.z - damperZ) / amount;
+        if (newKFStr != "") {
+            newKFStr += "/";
+        }
+        newKFStr += fToStr(time)+ ","+ fToStr(damperX) + "," + fToStr(damperY)
+                    + "," + fToStr(damperZ);
+
+    }
+    guiObjects[objNr].keyFrames = newKFStr;
+}
+
+/*
+
+void BinauralProject::smoothKeyFrames(int objNr, float amount) {
+    if (objNr < 0 || objNr >= MAX_OBJECTS) {
+        return;
+    }
+
+    int iAmount = (int)amount;
+    struct Point {
+        c3DPoint pos;
+        double time;
+    } points[iAmount + 2], tmpPoint;
+    float strength[iAmount + 2];
+    bool firstKeyFrame = true;
+    wxString newKFStr;
+
+    wxStringTokenizer token(guiObjects[objNr].keyFrames, "/");
+    while(token.HasMoreTokens()) {
+        wxString keyStr = token.GetNextToken();
+        wxStringTokenizer keyToken(keyStr, ",");
+
+        points[0].time = atof(keyToken.GetNextToken());
+        points[0].pos.x = atof(keyToken.GetNextToken());
+        points[0].pos.y = atof(keyToken.GetNextToken());
+        points[0].pos.z = atof(keyToken.GetNextToken());
+
+        if (firstKeyFrame == true) {
+            firstKeyFrame = false;
+            for (int i = 1; i < iAmount + 1; i++) {
+                points[i].time = 0;
+                strength[i] = 1;
+                points[i].pos = c3DPoint(0, 0, 0);
+            }
+            strength[iAmount + 1] = amount - iAmount;
+        }
+
+
+        tmpPoint.pos = c3DPoint(0, 0, 0);
+        tmpPoint.time = points[0].time;
+        for (int i = 0; i < iAmount + 1; i++) {
+            tmpPoint.pos.x += points[i].pos.x * strength[i];
+            tmpPoint.pos.y += points[i].pos.y * strength[i];
+            tmpPoint.pos.z += points[i].pos.z * strength[i];
+        }
+        tmpPoint.pos.x /= amount;
+        //wxMessageBox(fToStr(tmpPoint.pos.x));
+        tmpPoint.pos.y /= amount;
+        tmpPoint.pos.z /= amount;
+
+        for (int i = iAmount; i > 0; i--) {
+            points[i] = points[i - 1];
+        }
+
+        if (newKFStr != "") {
+            newKFStr += "/";
+        }
+        newKFStr += fToStr(tmpPoint.time)+ ","+ fToStr(tmpPoint.pos.x) + "," + fToStr(tmpPoint.pos.y)
+                    + "," + fToStr(tmpPoint.pos.z);
+
+    }
+    guiObjects[objNr].keyFrames = newKFStr;
+}
+*/

@@ -56,6 +56,7 @@ wxBEGIN_EVENT_TABLE(PropertiesEditor, wxVScrolledWindow)
 
     /* Buttons */
     EVT_BUTTON(PropertiesEditor::startId + PropertiesEditor::PROP_SPEAK_FILE, PropertiesEditor::OnPropButton)
+    EVT_BUTTON(PropertiesEditor::startId + PropertiesEditor::PROP_SPEAK_KEYFRAMES, PropertiesEditor::OnPropButton)
     EVT_BUTTON(PropertiesEditor::startId + PropertiesEditor::PROP_RNDSPKR_FILE, PropertiesEditor::OnPropButton)
     EVT_BUTTON(PropertiesEditor::startId + PropertiesEditor::PROP_MIC_FILE, PropertiesEditor::OnPropButton)
     EVT_BUTTON(PropertiesEditor::startId + PropertiesEditor::PROP_3DH_FILE, PropertiesEditor::OnPropButton)
@@ -113,7 +114,8 @@ void PropertiesEditor::createObjects() {
     txtProp[PROP_SPEAK_VOLUME] = new wxStaticText(this, wxID_ANY, "Volume:", wxPoint(0, height * 8), wxSize(width, height));
     editProp[PROP_SPEAK_VOLUME] = new wxTextCtrl(this, startId + PROP_SPEAK_VOLUME, wxEmptyString, wxPoint(0, height * 9), wxSize(width, height));
     txtProp[PROP_SPEAK_KEYFRAMES] = new wxStaticText(this, wxID_ANY, "Keyframes:", wxPoint(0, height * 10), wxSize(width, height));
-    editProp[PROP_SPEAK_KEYFRAMES] = new wxTextCtrl(this, startId + PROP_SPEAK_KEYFRAMES, wxEmptyString, wxPoint(0, height * 11), wxSize(width, height));
+    editProp[PROP_SPEAK_KEYFRAMES] = new wxTextCtrl(this, startId + PROP_SPEAK_KEYFRAMES, wxEmptyString, wxPoint(0, height * 11), wxSize(width - height, height));
+    btnProp[PROP_SPEAK_KEYFRAMES] = new wxButton(this, startId + PROP_SPEAK_KEYFRAMES, "...", wxPoint(width - height, height * 11), wxSize(height, height));
     txtProp[PROP_SPEAK_FLAGS] = new wxStaticText(this, wxID_ANY, "Flags:", wxPoint(0, height * 12), wxSize(width, height));
     editProp[PROP_SPEAK_FLAGS] = new wxTextCtrl(this, startId + PROP_SPEAK_FLAGS, wxEmptyString, wxPoint(0, height * 13), wxSize(width, height));
     txtProp[PROP_SPEAK_DELAY] = new wxStaticText(this, wxID_ANY, "Start Delay (s):", wxPoint(0, height * 14), wxSize(width, height));
@@ -232,6 +234,7 @@ void PropertiesEditor::showProperties() {
                 editProp[PROP_SPEAK_VOLUME]->Show();
                 txtProp[PROP_SPEAK_KEYFRAMES]->Show();
                 editProp[PROP_SPEAK_KEYFRAMES]->Show();
+                btnProp[PROP_SPEAK_KEYFRAMES]->Show();
                 txtProp[PROP_SPEAK_FLAGS]->Show();
                 editProp[PROP_SPEAK_FLAGS]->Show();
                 txtProp[PROP_SPEAK_DELAY]->Show();
@@ -680,10 +683,18 @@ void PropertiesEditor::OnPropButton(wxCommandEvent &evt) {
                     break;
                 }
 
-            case PROP_WALL_MOD:
+            case PROP_WALL_MOD: {
                 WallModEditorFrame *window = new WallModEditorFrame(0L, _("Wall Modifier"), myProject, currentObject);
                 window->Show();
                 break;
+            }
+
+            case PROP_SPEAK_KEYFRAMES: {
+                MovementEditorFrame *window = new MovementEditorFrame(0L, _("Movement Editor"), myProject, currentObject);
+                window->Show();
+                break;
+            }
+
         }
     }
 }

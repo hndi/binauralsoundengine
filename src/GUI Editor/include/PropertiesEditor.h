@@ -5,6 +5,7 @@
 #include <wx/vscroll.h>
 #include <BinauralProject.h>
 #include <WallModEditor.h>
+#include <MovementEditorFrame.h>
 
 class PropertiesEditor : public wxVScrolledWindow
 {

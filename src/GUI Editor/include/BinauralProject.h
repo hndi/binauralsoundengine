@@ -5,6 +5,7 @@
 #include <3DPoint.h>
 #include <wx/textfile.h>
 #include "guihelpers.h"
+#include <wx/tokenzr.h>
 
 class TempEvents {
     public:
@@ -88,6 +89,8 @@ class BinauralProject
         bool areWallsConnected(int obj1, int obj2);
         void movePointsInWallGroup(int originObj, c3DPoint oldPos1, c3DPoint oldPos2);
         bool arePointsClose(c3DPoint pt1, c3DPoint pt2, double maxDist);
+        c3DPoint getMovementPointAtTimeStamp(int objNr, double timeStamp);
+        void smoothKeyFrames(int objNr, float amount);
 
         int addSpeaker();
         int addRndSpeaker();
@@ -111,7 +114,7 @@ class BinauralProject
 
         double getModifiedWallAmplitude(int usedModifier, double position, double amplitude, double shift, double waveLength);
 
-        const float version = 0.5;
+        const float version = 0.7;
         TempEvents tempEvent;
     protected:
 

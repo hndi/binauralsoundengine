@@ -55,7 +55,6 @@ BEGIN_EVENT_TABLE(BinauralFilterGUIFrame, wxFrame)
     EVT_MENU(idMenuSceneSettings, BinauralFilterGUIFrame::OnMenuSceneSettings)
     EVT_MENU(idMenuOpen, BinauralFilterGUIFrame::OnMenuOpen)
 
-    EVT_SIZE(BinauralFilterGUIFrame::OnWindowResize)
     EVT_LISTBOX(11000, BinauralFilterGUIFrame::OnObjListClick)
 
     EVT_BUTTON(10101, BinauralFilterGUIFrame::OnViewTopClick)
@@ -108,7 +107,7 @@ BinauralFilterGUIFrame::BinauralFilterGUIFrame(wxFrame *frame, const wxString& t
 
     /* Default scene */
     int x= project->addSpeaker();
-    project->guiObjects[x].pos.setPoint(-1, -1, 1.6);
+    project->guiObjects[x].pos.setPoint(1, 1, 1.6);
     x = project->addHead();
     project->guiObjects[x].pos.setPoint(0, 0, 1.6);
 
@@ -141,22 +140,36 @@ BinauralFilterGUIFrame::BinauralFilterGUIFrame(wxFrame *frame, const wxString& t
     toolBar->Realize();
     toolBar->Show();
 
-    viewPort = new ViewPort(this, wxPoint(10, 5), wxSize(820, 500));
+    wxBoxSizer *mainSizerH = new wxBoxSizer(wxHORIZONTAL);
+
+    wxPanel *panel = new wxPanel(this, wxID_ANY,
+                                     wxDefaultPosition,
+                                     wxDefaultSize,
+                                     wxTAB_TRAVERSAL,
+                                     _("mypanel"));
+    panel->SetSizer(mainSizerH);
+    viewPort = new ViewPort(panel, wxPoint(10, 5), wxSize(64,64));//wxSize(820, 500));
     viewPort->setProject(project);
     viewPort->setZoom(3);
-    viewPort->setCenterOfView(c3DPoint(0, -1, 1.6));
-    boxObjects = new wxStaticBox(this, wxID_ANY, "Objects", wxPoint(839, 0), wxSize(180, 200));
-    boxProp = new wxStaticBox(this, wxID_ANY, "Properties", wxPoint(839, 220), wxSize(180, 285));
+    viewPort->setCenterOfView(c3DPoint(0, 0, 1.6));
 
-#ifdef __WXMSW__
-    listObj = new wxListBox(boxObjects, 11000, wxPoint(5, 20), wxSize(160, 160));
-    propEdit = new PropertiesEditor(boxProp, wxID_ANY, wxPoint(5, 20), wxSize(160, 160));
-#else
-    listObj = new wxListBox(boxObjects, 11000, wxPoint(10, 0), wxSize(160, 160));
-    propEdit = new PropertiesEditor(boxProp, wxID_ANY, wxPoint(10, 0), wxSize(160, 260));
-#endif //__WXMSW__
+    wxBoxSizer *boxRightSizerV = new wxBoxSizer(wxVERTICAL);
+    boxObjects = new wxStaticBox(panel, wxID_ANY, "Objects", wxPoint(0, 0), wxSize(200, 200));//, wxSize(180, 200));
+    boxProp = new wxStaticBox(panel, wxID_ANY, "Properties", wxPoint(0, 0), wxSize(200, 100));//, wxSize(180, 285));
 
+    listObj = new wxListBox(boxObjects, 11000, wxPoint(10, 0), wxSize(170, 160));
+
+    wxBoxSizer *propEditSizer = new wxBoxSizer(wxVERTICAL);
+    propEdit = new PropertiesEditor(boxProp, wxID_ANY, wxPoint(10, 0), wxSize(170, 260));
     propEdit->setProject(project);
+    propEditSizer->Add(propEdit, 0, wxEXPAND | wxALL, 0);
+
+    boxRightSizerV->Add(boxObjects, 0, wxALL, 5);
+    boxRightSizerV->Add(boxProp, 3, wxALL, 5);
+
+    mainSizerH->Add(viewPort, 3, wxEXPAND | wxALL, 5);
+    mainSizerH->Add(boxRightSizerV, 0, wxALL | wxEXPAND, 0);
+    mainSizerH->SetSizeHints(this);
 
     timer = new wxTimer(this, 1234);
     timer->Start(100);
@@ -166,6 +179,7 @@ BinauralFilterGUIFrame::BinauralFilterGUIFrame(wxFrame *frame, const wxString& t
 
 BinauralFilterGUIFrame::~BinauralFilterGUIFrame()
 {
+    timer->Stop();
 }
 
 void BinauralFilterGUIFrame::OnClose(wxCloseEvent &event)
@@ -230,13 +244,6 @@ void BinauralFilterGUIFrame::OnMenuSaveAs(wxCommandEvent& event) {
     event.Skip();
 }
 
-
-void BinauralFilterGUIFrame::OnWindowResize(wxSizeEvent &event) {
-
-    //viewPort->SetSize(viewPort->GetPosition().x, viewPort->GetPosition().y,
-    //                   this->GetSize().GetX() - 100, this->GetSize().GetY() - 100);
-
-}
 
 void BinauralFilterGUIFrame::OnAddSpeakerClick(wxCommandEvent &event) {
 #ifdef __WXMSW__
